@@ -1,0 +1,1024 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deeptrack — Data Room</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;0,9..144,600;1,9..144,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink-900:#0A0D12;
+    --ink-800:#12161F;
+    --ink-700:#1A2028;
+    --ink-650:#212836;
+    --hairline:#2A3140;
+    --hairline-soft:#1E2530;
+    --fg:#D8DDE6;
+    --fg-dim:#8A93A3;
+    --fg-faint:#5B6373;
+    --paper:#EDE7D8;
+    --seal:#C9A448;
+    --seal-dim:#8A7434;
+    --tier2:#6E90B8;
+    --tier3:#B2604B;
+    --good:#5FA97C;
+    --bad:#C05A4E;
+    --radius:3px;
+    --serif:'Fraunces', Georgia, serif;
+    --sans:'IBM Plex Sans', -apple-system, sans-serif;
+    --mono:'IBM Plex Mono', SFMono-Regular, Menlo, monospace;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--ink-900);
+    color:var(--fg);
+    font-family:var(--sans);
+    font-size:14px;
+    line-height:1.5;
+    min-height:100vh;
+  }
+  @media (prefers-reduced-motion: reduce){
+    *{animation-duration:.01ms !important; transition-duration:.01ms !important;}
+  }
+  a{color:inherit;}
+  button{font-family:inherit;}
+  button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible{
+    outline:2px solid var(--seal);
+    outline-offset:2px;
+  }
+  ::selection{background:var(--seal-dim); color:var(--ink-900);}
+
+  /* ---------- Utility ---------- */
+  .mono{font-family:var(--mono);}
+  .dim{color:var(--fg-dim);}
+  .faint{color:var(--fg-faint);}
+  .hidden{display:none !important;}
+
+  /* ---------- Login ---------- */
+  .login-screen{
+    min-height:100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:32px 20px;
+    background:
+      radial-gradient(1200px 600px at 50% -10%, #161C26 0%, var(--ink-900) 60%);
+  }
+  .login-card{
+    width:100%;
+    max-width:380px;
+    text-align:center;
+  }
+  .brand-eyebrow{
+    font-family:var(--mono);
+    font-size:11px;
+    letter-spacing:.22em;
+    color:var(--fg-faint);
+    text-transform:uppercase;
+    margin-bottom:10px;
+  }
+  .brand-title{
+    font-family:var(--serif);
+    font-weight:500;
+    font-size:32px;
+    color:var(--paper);
+    margin:0 0 6px;
+  }
+  .brand-sub{
+    color:var(--fg-dim);
+    font-size:13px;
+    margin-bottom:34px;
+  }
+
+  .dial-wrap{
+    width:172px;
+    height:172px;
+    margin:0 auto 30px;
+    position:relative;
+  }
+  .dial-ring{
+    transform-origin:86px 86px;
+    transition:transform .9s cubic-bezier(.2,.9,.2,1);
+  }
+  .dial-ring.spin{ transform:rotate(1080deg); }
+  .dial-ring.deny{ animation:denyshake .5s; }
+  @keyframes denyshake{
+    0%,100%{transform:translateX(0);}
+    20%{transform:translateX(-6px);}
+    40%{transform:translateX(5px);}
+    60%{transform:translateX(-4px);}
+    80%{transform:translateX(3px);}
+  }
+  .dial-center-label{
+    font-family:var(--mono);
+    font-size:11px;
+    letter-spacing:.14em;
+    fill:var(--fg-faint);
+    transition:fill .4s;
+  }
+  .dial-center-label.granted{ fill:var(--seal); }
+
+  .code-form{ text-align:left; }
+  .field-label{
+    display:block;
+    font-family:var(--mono);
+    font-size:10px;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    color:var(--fg-faint);
+    margin-bottom:8px;
+  }
+  input[type="text"], input[type="password"], input[type="url"], select, textarea{
+    width:100%;
+    background:var(--ink-800);
+    border:1px solid var(--hairline);
+    color:var(--fg);
+    padding:11px 12px;
+    border-radius:var(--radius);
+    font-family:var(--mono);
+    font-size:14px;
+    letter-spacing:.03em;
+  }
+  textarea{font-family:var(--sans); letter-spacing:normal; resize:vertical; min-height:64px;}
+  select{font-family:var(--sans);}
+  input::placeholder, textarea::placeholder{color:var(--fg-faint); font-family:var(--sans); letter-spacing:normal;}
+
+  .btn{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
+    background:var(--seal);
+    color:var(--ink-900);
+    border:none;
+    padding:11px 18px;
+    border-radius:var(--radius);
+    font-weight:600;
+    font-size:13px;
+    letter-spacing:.02em;
+    cursor:pointer;
+    transition:background .15s, transform .1s;
+  }
+  .btn:hover{ background:#DAB559; }
+  .btn:active{ transform:translateY(1px); }
+  .btn-ghost{
+    background:transparent;
+    color:var(--fg-dim);
+    border:1px solid var(--hairline);
+  }
+  .btn-ghost:hover{ color:var(--fg); border-color:var(--fg-faint); background:var(--ink-700); }
+  .btn-danger{ background:var(--bad); color:#fff; }
+  .btn-danger:hover{ background:#D06B5E; }
+  .btn-sm{ padding:7px 12px; font-size:12px; }
+  .btn-block{ width:100%; margin-top:18px; }
+
+  .login-error{
+    margin-top:14px;
+    font-size:12.5px;
+    color:var(--bad);
+    min-height:16px;
+  }
+  .login-foot{
+    margin-top:40px;
+    font-size:11.5px;
+    color:var(--fg-faint);
+    line-height:1.6;
+  }
+
+  /* ---------- App shell ---------- */
+  .app{ display:none; min-height:100vh; }
+  .app.active{ display:flex; }
+  .topbar{
+    position:fixed; top:0; left:0; right:0; height:56px;
+    background:var(--ink-800);
+    border-bottom:1px solid var(--hairline);
+    display:flex; align-items:center; justify-content:space-between;
+    padding:0 20px;
+    z-index:20;
+  }
+  .topbar-brand{ display:flex; align-items:baseline; gap:10px; }
+  .topbar-brand .t1{ font-family:var(--mono); font-size:10px; letter-spacing:.18em; color:var(--fg-faint); text-transform:uppercase;}
+  .topbar-brand .t2{ font-family:var(--serif); font-size:18px; color:var(--paper); }
+  .topbar-right{ display:flex; align-items:center; gap:14px; }
+  .who{
+    font-family:var(--mono); font-size:11.5px; color:var(--fg-dim);
+    display:flex; align-items:center; gap:8px;
+  }
+  .tier-chip{
+    font-family:var(--mono); font-size:10px; letter-spacing:.08em;
+    padding:2px 7px; border-radius:2px; border:1px solid var(--hairline);
+    color:var(--fg-dim);
+  }
+
+  .layout{ display:flex; width:100%; padding-top:56px; }
+  .sidebar{
+    width:220px; flex:none;
+    position:fixed; top:56px; bottom:0; left:0;
+    border-right:1px solid var(--hairline);
+    background:var(--ink-900);
+    padding:22px 0;
+    overflow-y:auto;
+  }
+  .sb-section-label{
+    font-family:var(--mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--fg-faint); padding:0 20px; margin:18px 0 8px;
+  }
+  .sb-item{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:9px 20px; cursor:pointer; color:var(--fg-dim); font-size:13.5px;
+    border-left:2px solid transparent;
+  }
+  .sb-item:hover{ color:var(--fg); background:var(--ink-800); }
+  .sb-item.active{ color:var(--paper); border-left-color:var(--seal); background:var(--ink-800); }
+  .sb-count{ font-family:var(--mono); font-size:11px; color:var(--fg-faint); }
+
+  .main{
+    margin-left:220px;
+    flex:1;
+    padding:36px 44px 80px;
+    max-width:920px;
+  }
+  .view-head{ margin-bottom:26px; }
+  .view-eyebrow{ font-family:var(--mono); font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--fg-faint); margin-bottom:6px;}
+  .view-title{ font-family:var(--serif); font-size:26px; color:var(--paper); font-weight:500; margin:0; }
+  .view-desc{ color:var(--fg-dim); font-size:13px; margin-top:6px; max-width:60ch; }
+
+  /* ---------- Ledger table ---------- */
+  .ledger{ border-top:1px solid var(--hairline); }
+  .ledger-row{
+    display:grid;
+    grid-template-columns:70px 1fr 100px 90px 40px;
+    align-items:center;
+    gap:14px;
+    padding:15px 4px;
+    border-bottom:1px solid var(--hairline-soft);
+    cursor:pointer;
+  }
+  .ledger-row:hover{ background:var(--ink-800); }
+  .ledger-id{ font-family:var(--mono); font-size:12px; color:var(--fg-faint); }
+  .ledger-main .title{ color:var(--fg); font-size:14px; }
+  .ledger-main .sub{ color:var(--fg-faint); font-size:12px; margin-top:2px; }
+  .ledger-date{ font-family:var(--mono); font-size:11.5px; color:var(--fg-faint); text-align:right; }
+  .ledger-qa{ font-family:var(--mono); font-size:11px; color:var(--fg-faint); text-align:right; }
+
+  .stamp{ width:30px; height:30px; }
+  .stamp circle.ring{ fill:none; stroke:var(--hairline); stroke-width:1.4; }
+  .stamp circle.dot{ fill:var(--fg-faint); }
+  .stamp.t1 circle.ring{ stroke:var(--good); }
+  .stamp.t1 circle.dot.d1{ fill:var(--good); }
+  .stamp.t2 circle.ring{ stroke:var(--tier2); }
+  .stamp.t2 circle.dot.d1, .stamp.t2 circle.dot.d2{ fill:var(--tier2); }
+  .stamp.t3 circle.ring{ stroke:var(--tier3); }
+  .stamp.t3 circle.dot{ fill:var(--tier3); }
+
+  .empty{
+    padding:50px 10px; text-align:center; color:var(--fg-faint); font-size:13px;
+    border-top:1px solid var(--hairline);
+  }
+  .empty .el{ font-family:var(--serif); font-style:italic; color:var(--fg-dim); font-size:16px; margin-bottom:6px; }
+
+  /* ---------- Drawer ---------- */
+  .scrim{
+    position:fixed; inset:0; background:rgba(6,8,11,.6);
+    z-index:29; display:none;
+  }
+  .scrim.active{ display:block; }
+  .drawer{
+    position:fixed; top:0; right:0; bottom:0;
+    width:420px; max-width:92vw;
+    background:var(--ink-800);
+    border-left:1px solid var(--hairline);
+    transform:translateX(100%);
+    transition:transform .25s ease;
+    z-index:30;
+    overflow-y:auto;
+    padding:26px 26px 40px;
+  }
+  .drawer.active{ transform:translateX(0); }
+  .drawer-close{
+    background:none; border:none; color:var(--fg-faint); cursor:pointer; font-size:13px;
+    font-family:var(--mono); padding:0; margin-bottom:22px;
+  }
+  .drawer-close:hover{ color:var(--fg); }
+  .drawer-tier{ display:flex; align-items:center; gap:10px; margin-bottom:14px; }
+  .drawer h2{ font-family:var(--serif); font-weight:500; font-size:21px; color:var(--paper); margin:0 0 6px; }
+  .drawer-meta{ font-family:var(--mono); font-size:11px; color:var(--fg-faint); margin-bottom:18px; }
+  .drawer-desc{ color:var(--fg-dim); font-size:13px; margin-bottom:20px; }
+  .drawer hr{ border:none; border-top:1px solid var(--hairline); margin:22px 0; }
+
+  .thread-msg{ padding:10px 0; border-bottom:1px solid var(--hairline-soft); }
+  .thread-msg .who{ font-family:var(--mono); font-size:11px; color:var(--fg-faint); margin-bottom:4px; }
+  .thread-msg .txt{ font-size:13px; color:var(--fg); }
+  .thread-input-row{ display:flex; gap:8px; margin-top:14px; }
+  .thread-input-row textarea{ flex:1; min-height:44px; }
+
+  .firm-tabs{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom:14px; }
+  .firm-tab{
+    font-family:var(--mono); font-size:11px; padding:5px 9px; border-radius:2px;
+    border:1px solid var(--hairline); color:var(--fg-dim); cursor:pointer;
+  }
+  .firm-tab.active{ border-color:var(--seal); color:var(--paper); }
+
+  /* ---------- Forms / admin ---------- */
+  .form-grid{ display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:14px; }
+  .form-grid .full{ grid-column:1 / -1; }
+  .panel{
+    background:var(--ink-800); border:1px solid var(--hairline); border-radius:var(--radius);
+    padding:22px; margin-bottom:22px;
+  }
+  .panel h3{ font-family:var(--serif); font-weight:500; font-size:17px; color:var(--paper); margin:0 0 16px; }
+  .row-between{ display:flex; align-items:center; justify-content:space-between; }
+  .code-line{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding:11px 0; border-bottom:1px solid var(--hairline-soft); font-size:13px;
+  }
+  .code-line .fname{ color:var(--fg); }
+  .code-line .fcode{ font-family:var(--mono); color:var(--fg-dim); font-size:12px; }
+  .code-line .factions{ display:flex; gap:6px; align-items:center; }
+
+  .activity-row{
+    display:flex; justify-content:space-between; gap:12px;
+    padding:11px 0; border-bottom:1px solid var(--hairline-soft); font-size:12.5px;
+  }
+  .activity-row .a-what{ color:var(--fg-dim); }
+  .activity-row .a-when{ font-family:var(--mono); color:var(--fg-faint); white-space:nowrap; }
+
+  .banner{
+    background:#2A2116; border:1px solid var(--seal-dim); color:#E4C98A;
+    font-size:12.5px; padding:10px 14px; border-radius:var(--radius); margin-bottom:18px;
+  }
+
+  @media (max-width: 760px){
+    .sidebar{ display:none; }
+    .main{ margin-left:0; padding:24px 18px 70px; }
+    .ledger-row{ grid-template-columns:50px 1fr 30px; }
+    .ledger-date, .ledger-qa{ display:none; }
+    .form-grid{ grid-template-columns:1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div id="root"></div>
+
+<script>
+(function(){
+
+/* ================= Storage layer (Vercel serverless + Upstash Redis) ================= */
+let persistent = true;
+
+async function stGet(key){
+  try{
+    const r = await fetch('/api/kv?key=' + encodeURIComponent(key));
+    if(!r.ok) throw new Error('bad status ' + r.status);
+    const data = await r.json();
+    return (data.value !== null && data.value !== undefined) ? JSON.parse(data.value) : null;
+  }catch(e){
+    persistent = false;
+    return null;
+  }
+}
+async function stSet(key, value){
+  try{
+    const r = await fetch('/api/kv', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ key, value: JSON.stringify(value) })
+    });
+    if(!r.ok) throw new Error('bad status ' + r.status);
+    return true;
+  }catch(e){
+    persistent = false;
+    return false;
+  }
+}
+function persistenceBanner(){
+  if(persistent) return '';
+  return `<div class="banner">Storage isn't connected right now, so nothing will be saved — check that the Upstash/KV
+    integration is attached to this Vercel project and redeploy. The room still works for this session.</div>`;
+}
+
+/* ================= Constants ================= */
+const CATS = [
+  {id:'legal', label:'Legal'},
+  {id:'financial', label:'Financial & Cap Table'},
+  {id:'product', label:'Product & Tech'},
+  {id:'team', label:'Team'},
+  {id:'other', label:'Other'}
+];
+const TIER_LABEL = {1:'General', 2:'Diligence', 3:'Restricted'};
+
+function uid(prefix){ return prefix + '-' + Math.random().toString(36).slice(2,7).toUpperCase(); }
+function nowISO(){ return new Date().toISOString(); }
+function fmtDate(iso){
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'});
+}
+function fmtDateTime(iso){
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined,{month:'short',day:'numeric'}) + ' · ' +
+         d.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'});
+}
+function esc(s){
+  return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function nextDocCode(docs){
+  const n = docs.length + 1;
+  return 'DT-' + String(n).padStart(3,'0');
+}
+
+/* ================= State ================= */
+let access = null;   // {founderCode, cosCode, investors:[{id, firm, code, tier}]}
+let core   = null;   // {documents:[...]}
+let activity = [];   // [{ts, who, role, action, docId, docTitle}]
+let threads  = {};   // {docId: {investorId: [{author, text, ts}]}}
+
+let session = null;  // {role:'founder'|'cos'|'investor', firm, tier, investorId}
+let activeCat = 'legal';
+let drawerDocId = null;
+let drawerFirmTab = null;
+let adminView = null; // 'settings' | 'activity' | null
+
+const ROOT = document.getElementById('root');
+
+/* ================= Defaults / seeding ================= */
+function defaultAccess(){
+  return {
+    founderCode: 'FOUNDER-4471',
+    cosCode: 'STAFF-2290',
+    investors: []
+  };
+}
+function defaultCore(){
+  return { documents: [] };
+}
+
+async function loadAll(){
+  access = await stGet('dataroom-access');
+  if(!access){ access = defaultAccess(); await stSet('dataroom-access', access); }
+  else{
+    const d = defaultAccess();
+    let patched = false;
+    if(!access.founderCode){ access.founderCode = d.founderCode; patched = true; }
+    if(!access.cosCode){ access.cosCode = d.cosCode; patched = true; }
+    if(!Array.isArray(access.investors)){ access.investors = []; patched = true; }
+    if(patched){ await stSet('dataroom-access', access); }
+  }
+  core = await stGet('dataroom-core');
+  if(!core){ core = defaultCore(); await stSet('dataroom-core', core); }
+  activity = await stGet('dataroom-activity');
+  if(!activity){ activity = []; await stSet('dataroom-activity', activity); }
+  threads = await stGet('dataroom-threads');
+  if(!threads){ threads = {}; await stSet('dataroom-threads', threads); }
+}
+
+async function logActivity(action, doc){
+  activity.unshift({
+    ts: nowISO(),
+    who: session.role === 'investor' ? session.firm : (session.role === 'founder' ? 'Founder' : 'Chief of Staff'),
+    role: session.role,
+    action,
+    docId: doc ? doc.id : null,
+    docTitle: doc ? doc.title : null
+  });
+  activity = activity.slice(0, 300);
+  await stSet('dataroom-activity', activity);
+}
+
+/* ================= Auth ================= */
+function norm(s){ return String(s||'').trim().toUpperCase().replace(/\s+/g,''); }
+function tryCode(code){
+  code = norm(code);
+  if(!code) return null;
+  if(code === norm(access.founderCode)) return {role:'founder', tier:3};
+  if(code === norm(access.cosCode)) return {role:'cos', tier:3};
+  const inv = access.investors.find(i => norm(i.code) === code);
+  if(inv) return {role:'investor', firm:inv.firm, tier:inv.tier, investorId:inv.id};
+  return null;
+}
+
+/* ================= Render: Login ================= */
+function renderLogin(){
+  ROOT.innerHTML = `
+  <div class="login-screen">
+    <div class="login-card">
+      ${persistenceBanner()}
+      <div class="brand-eyebrow">Deeptrack Inc.</div>
+      <div class="brand-title">Data Room</div>
+      <div class="brand-sub">A single, governed record for fundraising diligence.</div>
+
+      <div class="dial-wrap">
+        <svg viewBox="0 0 172 172" width="172" height="172">
+          <g class="dial-ring" id="dialRing">
+            <circle cx="86" cy="86" r="80" fill="none" stroke="var(--hairline)" stroke-width="1.4"/>
+            <circle cx="86" cy="86" r="80" fill="none" stroke="var(--seal-dim)" stroke-width="1.4"
+                    stroke-dasharray="2 10" />
+            <circle cx="86" cy="86" r="58" fill="none" stroke="var(--hairline)" stroke-width="1"/>
+          </g>
+          <circle cx="86" cy="86" r="40" fill="var(--ink-800)" stroke="var(--hairline)" stroke-width="1"/>
+          <text x="86" y="83" text-anchor="middle" class="dial-center-label" id="dialLabel">LOCKED</text>
+          <text x="86" y="98" text-anchor="middle" class="dial-center-label" id="dialSub" style="font-size:9px;"></text>
+        </svg>
+      </div>
+
+      <form class="code-form" id="loginForm">
+        <label class="field-label" for="codeInput">Access code</label>
+        <input type="text" id="codeInput" placeholder="Enter your code" autocomplete="off" spellcheck="false" autofocus>
+        <div class="login-error" id="loginError"></div>
+        <button class="btn btn-block" type="submit">Unlock</button>
+      </form>
+
+      <div class="login-foot">
+        Founders and the Chief of Staff hold standing codes. Each investor is issued a firm-specific code that
+        opens only the tier of the room they've been cleared for.<br>No code? Contact Brian Koyundi.
+      </div>
+    </div>
+  </div>`;
+
+  const form = document.getElementById('loginForm');
+  const input = document.getElementById('codeInput');
+  const err = document.getElementById('loginError');
+  const ring = document.getElementById('dialRing');
+  const label = document.getElementById('dialLabel');
+  const sub = document.getElementById('dialSub');
+
+  form.addEventListener('submit', function(e){
+    e.preventDefault();
+    const result = tryCode(input.value);
+    if(result){
+      ring.classList.remove('deny');
+      ring.classList.add('spin');
+      label.classList.add('granted');
+      label.textContent = result.role === 'founder' ? 'FOUNDER' : result.role === 'cos' ? 'CHIEF OF STAFF' : 'CLEARED';
+      sub.textContent = result.role === 'investor' ? result.firm.toUpperCase() : 'ACCESS GRANTED';
+      err.textContent = '';
+      setTimeout(async () => {
+        session = result;
+        activeCat = 'legal';
+        await logActivity('signed in');
+        renderApp();
+      }, 650);
+    }else{
+      ring.classList.remove('spin');
+      // force reflow to restart animation
+      void ring.offsetWidth;
+      ring.classList.add('deny');
+      err.textContent = "That code isn't on file. Contact Brian Koyundi for access.";
+      input.select();
+    }
+  });
+}
+
+/* ================= Render: App shell ================= */
+function visibleCategories(){
+  return CATS;
+}
+function docsForCat(catId){
+  let docs = core.documents.filter(d => d.category === catId);
+  if(session.role === 'investor'){
+    docs = docs.filter(d => d.tier <= session.tier);
+  }
+  return docs.sort((a,b)=> a.code < b.code ? -1 : 1);
+}
+function countForCat(catId){
+  return docsForCat(catId).length;
+}
+
+function roleLabel(){
+  if(session.role==='founder') return 'Founder';
+  if(session.role==='cos') return 'Chief of Staff';
+  return session.firm;
+}
+
+function renderApp(){
+  const isAdmin = session.role === 'founder' || session.role === 'cos';
+
+  ROOT.innerHTML = `
+  <div class="app active">
+    <div class="topbar">
+      <div class="topbar-brand">
+        <span class="t1">Deeptrack</span>
+        <span class="t2">Data Room</span>
+      </div>
+      <div class="topbar-right">
+        <span class="who">${esc(roleLabel())} <span class="tier-chip">${TIER_LABEL[session.tier]}</span></span>
+        <button class="btn btn-ghost btn-sm" id="signOutBtn">Sign out</button>
+      </div>
+    </div>
+    <div class="layout">
+      <div class="sidebar" id="sidebar"></div>
+      <div class="main">
+        ${persistenceBanner()}
+        <div id="mainView"></div>
+      </div>
+    </div>
+  </div>
+  <div class="scrim" id="scrim"></div>
+  <div class="drawer" id="drawer"></div>
+  `;
+
+  document.getElementById('signOutBtn').addEventListener('click', () => {
+    session = null;
+    renderLogin();
+  });
+  document.getElementById('scrim').addEventListener('click', closeDrawer);
+
+  renderSidebar();
+  if(adminView === 'settings' && isAdmin){ renderSettingsView(); }
+  else if(adminView === 'activity' && isAdmin){ renderActivityView(); }
+  else { renderCategoryView(activeCat); }
+}
+
+function renderSidebar(){
+  const isAdmin = session.role === 'founder' || session.role === 'cos';
+  const sb = document.getElementById('sidebar');
+  let html = `<div class="sb-section-label">Room index</div>`;
+  visibleCategories().forEach(c => {
+    const active = (!adminView && activeCat === c.id) ? 'active' : '';
+    html += `<div class="sb-item ${active}" data-cat="${c.id}">
+      <span>${esc(c.label)}</span><span class="sb-count">${countForCat(c.id)}</span>
+    </div>`;
+  });
+  if(isAdmin){
+    html += `<div class="sb-section-label">Room management</div>
+      <div class="sb-item ${adminView==='activity'?'active':''}" data-admin="activity">
+        <span>Room activity</span><span class="sb-count">${activity.length}</span>
+      </div>
+      <div class="sb-item ${adminView==='settings'?'active':''}" data-admin="settings">
+        <span>Access &amp; settings</span>
+      </div>`;
+  }
+  sb.innerHTML = html;
+  sb.querySelectorAll('[data-cat]').forEach(el => el.addEventListener('click', () => {
+    activeCat = el.getAttribute('data-cat');
+    adminView = null;
+    renderApp();
+  }));
+  sb.querySelectorAll('[data-admin]').forEach(el => el.addEventListener('click', () => {
+    adminView = el.getAttribute('data-admin');
+    renderApp();
+  }));
+}
+
+/* ================= Render: Category / ledger ================= */
+function stampSVG(tier){
+  const dots = tier === 1
+    ? `<circle class="dot d1" cx="15" cy="15" r="3"/>`
+    : tier === 2
+    ? `<circle class="dot d1" cx="11" cy="15" r="3"/><circle class="dot d2" cx="19" cy="15" r="3"/>`
+    : `<circle class="dot d1" cx="8" cy="15" r="2.6"/><circle class="dot d2" cx="15" cy="15" r="2.6"/><circle class="dot d3" cx="22" cy="15" r="2.6"/>`;
+  return `<svg class="stamp t${tier}" viewBox="0 0 30 30"><circle class="ring" cx="15" cy="15" r="13"/>${dots}</svg>`;
+}
+
+function renderCategoryView(catId){
+  const isAdmin = session.role === 'founder' || session.role === 'cos';
+  const cat = CATS.find(c=>c.id===catId) || CATS[0];
+  const docs = docsForCat(catId);
+  const main = document.getElementById('mainView');
+
+  let rows = '';
+  docs.forEach(d => {
+    const qaCount = threadCountForDoc(d.id);
+    rows += `<div class="ledger-row" data-doc="${d.id}">
+      <div class="ledger-id mono">${esc(d.code)}</div>
+      <div class="ledger-main">
+        <div class="title">${esc(d.title)}</div>
+        ${d.description ? `<div class="sub">${esc(d.description)}</div>` : ''}
+      </div>
+      ${stampSVG(d.tier)}
+      <div class="ledger-date">${fmtDate(d.addedAt)}</div>
+      <div class="ledger-qa">${qaCount ? qaCount + ' note' + (qaCount>1?'s':'') : ''}</div>
+    </div>`;
+  });
+
+  const emptyMsg = isAdmin
+    ? `<div class="empty"><div class="el">Nothing filed under ${esc(cat.label)} yet.</div>File the first entry to open this section to investors.</div>`
+    : `<div class="empty"><div class="el">Nothing filed under ${esc(cat.label)} yet.</div>Check back once the company adds entries here.</div>`;
+
+  main.innerHTML = `
+    <div class="view-head">
+      <div class="view-eyebrow">Section ${docs.length ? '· ' + docs.length + ' ' + (docs.length===1?'entry':'entries') : ''}</div>
+      <h1 class="view-title">${esc(cat.label)}</h1>
+      ${isAdmin ? `<div style="margin-top:14px;"><button class="btn btn-sm" id="addDocBtn">File a document</button></div>` : ''}
+    </div>
+    <div class="ledger">${rows}</div>
+    ${docs.length ? '' : emptyMsg}
+    <div id="addDocPanel"></div>
+  `;
+
+  main.querySelectorAll('.ledger-row').forEach(el => {
+    el.addEventListener('click', () => openDrawer(el.getAttribute('data-doc')));
+  });
+
+  if(isAdmin){
+    const btn = document.getElementById('addDocBtn');
+    if(btn) btn.addEventListener('click', () => renderAddDocForm(catId));
+  }
+}
+
+function threadCountForDoc(docId){
+  const t = threads[docId];
+  if(!t) return 0;
+  return Object.values(t).reduce((sum, arr) => sum + arr.length, 0);
+}
+
+function renderAddDocForm(catId){
+  const panel = document.getElementById('addDocPanel');
+  panel.innerHTML = `
+    <div class="panel" style="margin-top:22px;">
+      <h3>File a document</h3>
+      <div class="form-grid">
+        <div class="full">
+          <label class="field-label">Title</label>
+          <input type="text" id="fTitle" placeholder="e.g. SAFE Note — $750K pre-seed">
+        </div>
+        <div>
+          <label class="field-label">Category</label>
+          <select id="fCat">
+            ${CATS.map(c => `<option value="${c.id}" ${c.id===catId?'selected':''}>${esc(c.label)}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label class="field-label">Clearance tier</label>
+          <select id="fTier">
+            <option value="1">General — any investor</option>
+            <option value="2">Diligence — cleared investors</option>
+            <option value="3">Restricted — founder &amp; staff only</option>
+          </select>
+        </div>
+        <div class="full">
+          <label class="field-label">Link (Drive, Notion, etc.)</label>
+          <input type="url" id="fLink" placeholder="https://">
+        </div>
+        <div class="full">
+          <label class="field-label">Note (optional)</label>
+          <textarea id="fDesc" placeholder="One line of context for the reader"></textarea>
+        </div>
+      </div>
+      <div style="display:flex; gap:10px;">
+        <button class="btn btn-sm" id="fSave">File document</button>
+        <button class="btn btn-ghost btn-sm" id="fCancel">Cancel</button>
+      </div>
+    </div>
+  `;
+  document.getElementById('fCancel').addEventListener('click', () => { panel.innerHTML=''; });
+  document.getElementById('fSave').addEventListener('click', async () => {
+    const title = document.getElementById('fTitle').value.trim();
+    const link = document.getElementById('fLink').value.trim();
+    if(!title){ document.getElementById('fTitle').focus(); return; }
+    const doc = {
+      id: uid('doc'),
+      code: nextDocCode(core.documents),
+      title,
+      category: document.getElementById('fCat').value,
+      tier: parseInt(document.getElementById('fTier').value,10),
+      link,
+      description: document.getElementById('fDesc').value.trim(),
+      addedBy: roleLabel(),
+      addedAt: nowISO()
+    };
+    core.documents.push(doc);
+    await stSet('dataroom-core', core);
+    await logActivity('filed a document', doc);
+    activeCat = doc.category;
+    renderApp();
+  });
+}
+
+/* ================= Render: Drawer (doc detail + Q&A) ================= */
+function closeDrawer(){
+  document.getElementById('scrim').classList.remove('active');
+  document.getElementById('drawer').classList.remove('active');
+  drawerDocId = null;
+}
+
+async function openDrawer(docId){
+  const doc = core.documents.find(d => d.id === docId);
+  if(!doc) return;
+  drawerDocId = docId;
+  const isAdmin = session.role === 'founder' || session.role === 'cos';
+
+  if(session.role === 'investor'){
+    await logActivity('opened a document', doc);
+  }else{
+    // still record admin views lightly? skip to keep signal clean for investor engagement
+  }
+
+  if(session.role === 'investor'){
+    drawerFirmTab = session.investorId;
+  }else{
+    const firmIds = Object.keys(threads[doc.id] || {});
+    drawerFirmTab = firmIds.length ? firmIds[0] : null;
+  }
+
+  renderDrawer(doc);
+  document.getElementById('scrim').classList.add('active');
+  document.getElementById('drawer').classList.add('active');
+}
+
+function renderDrawer(doc){
+  const isAdmin = session.role === 'founder' || session.role === 'cos';
+  const drawer = document.getElementById('drawer');
+
+  let firmTabsHtml = '';
+  if(isAdmin){
+    const firmIds = Object.keys(threads[doc.id] || {});
+    if(firmIds.length){
+      firmTabsHtml = `<div class="firm-tabs">` + firmIds.map(fid => {
+        const inv = access.investors.find(i => i.id === fid);
+        const name = inv ? inv.firm : 'Unknown firm';
+        return `<div class="firm-tab ${drawerFirmTab===fid?'active':''}" data-firm="${fid}">${esc(name)}</div>`;
+      }).join('') + `</div>`;
+    }
+  }
+
+  const msgs = (threads[doc.id] && drawerFirmTab && threads[doc.id][drawerFirmTab]) || [];
+  let msgsHtml = msgs.length
+    ? msgs.map(m => `<div class="thread-msg"><div class="who">${esc(m.author)} · ${fmtDateTime(m.ts)}</div><div class="txt">${esc(m.text)}</div></div>`).join('')
+    : `<div class="faint" style="padding:10px 0; font-size:12.5px;">No questions on this document yet.</div>`;
+
+  const canWrite = session.role === 'investor' || (isAdmin && drawerFirmTab);
+
+  drawer.innerHTML = `
+    <button class="drawer-close" id="drawerCloseBtn">← Back to room</button>
+    <div class="drawer-tier">${stampSVG(doc.tier)}<span class="faint mono" style="font-size:11px;">${TIER_LABEL[doc.tier].toUpperCase()} CLEARANCE</span></div>
+    <h2>${esc(doc.title)}</h2>
+    <div class="drawer-meta">${esc(doc.code)} · filed by ${esc(doc.addedBy)} · ${fmtDate(doc.addedAt)}</div>
+    ${doc.description ? `<div class="drawer-desc">${esc(doc.description)}</div>` : ''}
+    ${doc.link ? `<a href="${esc(doc.link)}" target="_blank" rel="noopener"><button class="btn btn-sm">Open document ↗</button></a>` : `<div class="faint" style="font-size:12.5px;">No link filed yet.</div>`}
+
+    <hr>
+    <h3 style="font-family:var(--serif); font-weight:500; font-size:15px; color:var(--paper); margin:0 0 12px;">
+      Diligence notes ${isAdmin ? '' : '— visible only to the company'}
+    </h3>
+    ${firmTabsHtml}
+    <div id="threadMsgs">${msgsHtml}</div>
+    ${canWrite ? `
+      <div class="thread-input-row">
+        <textarea id="threadInput" placeholder="${session.role==='investor' ? 'Ask a question about this document…' : 'Reply to '+ (access.investors.find(i=>i.id===drawerFirmTab)||{}).firm + '…'}"></textarea>
+        <button class="btn btn-sm" id="threadSend">Send</button>
+      </div>` : (isAdmin ? `<div class="faint" style="font-size:12px; margin-top:10px;">Select a firm above once they've asked something.</div>` : '')}
+  `;
+
+  document.getElementById('drawerCloseBtn').addEventListener('click', closeDrawer);
+  drawer.querySelectorAll('[data-firm]').forEach(el => {
+    el.addEventListener('click', () => { drawerFirmTab = el.getAttribute('data-firm'); renderDrawer(doc); });
+  });
+  const sendBtn = document.getElementById('threadSend');
+  if(sendBtn){
+    sendBtn.addEventListener('click', async () => {
+      const ta = document.getElementById('threadInput');
+      const text = ta.value.trim();
+      if(!text) return;
+      const firmId = session.role === 'investor' ? session.investorId : drawerFirmTab;
+      if(!firmId) return;
+      threads[doc.id] = threads[doc.id] || {};
+      threads[doc.id][firmId] = threads[doc.id][firmId] || [];
+      threads[doc.id][firmId].push({ author: roleLabel(), text, ts: nowISO() });
+      await stSet('dataroom-threads', threads);
+      await logActivity(session.role==='investor' ? 'asked a question' : 'replied', doc);
+      renderDrawer(doc);
+    });
+  }
+}
+
+/* ================= Render: Admin — Activity ================= */
+function renderActivityView(){
+  const main = document.getElementById('mainView');
+  let rows = activity.map(a => `
+    <div class="activity-row">
+      <div class="a-what"><strong style="color:var(--fg);">${esc(a.who)}</strong> ${esc(a.action)}${a.docTitle ? ' — <span class="dim">'+esc(a.docTitle)+'</span>' : ''}</div>
+      <div class="a-when">${fmtDateTime(a.ts)}</div>
+    </div>`).join('');
+  main.innerHTML = `
+    <div class="view-head">
+      <div class="view-eyebrow">Management</div>
+      <h1 class="view-title">Room activity</h1>
+      <div class="view-desc">Every sign-in, filing, document open and question, newest first. This is your read on who's actually diligencing.</div>
+    </div>
+    ${activity.length ? `<div class="ledger">${rows}</div>` : `<div class="empty"><div class="el">Quiet so far.</div>Activity appears here once someone signs in.</div>`}
+  `;
+}
+
+/* ================= Render: Admin — Settings ================= */
+function renderSettingsView(){
+  const main = document.getElementById('mainView');
+  main.innerHTML = `
+    <div class="view-head">
+      <div class="view-eyebrow">Management</div>
+      <h1 class="view-title">Access &amp; settings</h1>
+      <div class="view-desc">Standing codes for the founder and Chief of Staff, plus one issued code per investor. Codes are a lightweight gate, not encryption — treat this room like a locked drawer, not a vault door, and keep real due-diligence secrets off it if they'd be damaging in the wrong hands.</div>
+    </div>
+
+    <div class="panel">
+      <h3>Standing codes</h3>
+      <div class="form-grid">
+        <div>
+          <label class="field-label">Founder code</label>
+          <input type="text" id="setFounder" value="${esc(access.founderCode)}">
+        </div>
+        <div>
+          <label class="field-label">Chief of Staff code</label>
+          <input type="text" id="setCos" value="${esc(access.cosCode)}">
+        </div>
+      </div>
+      <button class="btn btn-sm" id="saveCodesBtn">Save codes</button>
+    </div>
+
+    <div class="panel">
+      <h3>Investor codes</h3>
+      <div id="investorList"></div>
+      <div class="form-grid" style="margin-top:16px;">
+        <div>
+          <label class="field-label">Firm name</label>
+          <input type="text" id="invFirm" placeholder="e.g. Savannah Fund">
+        </div>
+        <div>
+          <label class="field-label">Clearance tier</label>
+          <select id="invTier">
+            <option value="1">General</option>
+            <option value="2">Diligence</option>
+          </select>
+        </div>
+      </div>
+      <button class="btn btn-sm" id="issueBtn">Issue code</button>
+    </div>
+  `;
+
+  renderInvestorList();
+
+  document.getElementById('saveCodesBtn').addEventListener('click', async () => {
+    const f = document.getElementById('setFounder').value.trim();
+    const c = document.getElementById('setCos').value.trim();
+    if(!f || !c) return;
+    access.founderCode = f;
+    access.cosCode = c;
+    await stSet('dataroom-access', access);
+    renderApp();
+  });
+
+  document.getElementById('issueBtn').addEventListener('click', async () => {
+    const firm = document.getElementById('invFirm').value.trim();
+    if(!firm) return;
+    const tier = parseInt(document.getElementById('invTier').value,10);
+    const inv = { id: uid('inv'), firm, tier, code: uid('DT-INV') };
+    access.investors.push(inv);
+    await stSet('dataroom-access', access);
+    await logActivity('issued a code for ' + firm);
+    renderSettingsView();
+  });
+}
+
+function renderInvestorList(){
+  const wrap = document.getElementById('investorList');
+  if(!access.investors.length){
+    wrap.innerHTML = `<div class="faint" style="font-size:12.5px; padding:8px 0;">No investor codes issued yet.</div>`;
+    return;
+  }
+  wrap.innerHTML = access.investors.map(inv => `
+    <div class="code-line">
+      <span class="fname">${esc(inv.firm)} <span class="faint mono" style="font-size:11px;">· ${TIER_LABEL[inv.tier]}</span></span>
+      <span class="factions">
+        <span class="fcode">${esc(inv.code)}</span>
+        <button class="btn btn-ghost btn-sm" data-upgrade="${inv.id}">${inv.tier===1 ? 'Grant diligence' : 'Set general'}</button>
+        <button class="btn btn-ghost btn-sm" data-revoke="${inv.id}">Revoke</button>
+      </span>
+    </div>
+  `).join('');
+
+  wrap.querySelectorAll('[data-upgrade]').forEach(el => {
+    el.addEventListener('click', async () => {
+      const inv = access.investors.find(i => i.id === el.getAttribute('data-upgrade'));
+      inv.tier = inv.tier === 1 ? 2 : 1;
+      await stSet('dataroom-access', access);
+      await logActivity('changed clearance for ' + inv.firm);
+      renderSettingsView();
+    });
+  });
+  wrap.querySelectorAll('[data-revoke]').forEach(el => {
+    el.addEventListener('click', async () => {
+      const id = el.getAttribute('data-revoke');
+      const inv = access.investors.find(i => i.id === id);
+      if(!confirm('Revoke access for ' + inv.firm + '? Their code will stop working immediately.')) return;
+      access.investors = access.investors.filter(i => i.id !== id);
+      await stSet('dataroom-access', access);
+      await logActivity('revoked access for ' + inv.firm);
+      renderSettingsView();
+    });
+  });
+}
+
+/* ================= Boot ================= */
+async function boot(){
+  ROOT.innerHTML = `<div class="login-screen"><div class="dim mono" style="font-size:12px;">Opening the room…</div></div>`;
+  await loadAll();
+  renderLogin();
+}
+boot();
+
+})();
+</script>
+</body>
+</html>

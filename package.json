@@ -1,0 +1,7 @@
+{
+  "name": "deeptrack-data-room",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Deeptrack internal fundraising data room",
+  "engines": { "node": ">=18" }
+}
