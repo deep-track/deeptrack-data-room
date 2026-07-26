@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Deeptrack — Data Room</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;0,9..144,600;1,9..144,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root{
     --ink-900:#0A0D12;
@@ -17,15 +17,19 @@
     --fg:#D8DDE6;
     --fg-dim:#8A93A3;
     --fg-faint:#5B6373;
-    --paper:#EDE7D8;
-    --seal:#C9A448;
-    --seal-dim:#8A7434;
+    --paper:#EAF4FB;
+    --brand-blue:#0191DA;
+    --brand-blue-light:#8AD1F5;
+    --brand-blue-mid:#43AEE0;
+    --brand-blue-dark:#0B6FA8;
+    --seal:#0191DA;
+    --seal-dim:#0B6FA8;
     --tier2:#6E90B8;
     --tier3:#B2604B;
     --good:#5FA97C;
     --bad:#C05A4E;
     --radius:3px;
-    --serif:'Fraunces', Georgia, serif;
+    --serif:'Space Grotesk', 'IBM Plex Sans', sans-serif;
     --sans:'IBM Plex Sans', -apple-system, sans-serif;
     --mono:'IBM Plex Mono', SFMono-Regular, Menlo, monospace;
   }
@@ -64,46 +68,23 @@
     justify-content:center;
     padding:32px 20px;
     background:
-      radial-gradient(1200px 600px at 50% -10%, #161C26 0%, var(--ink-900) 60%);
+      radial-gradient(1200px 600px at 50% -10%, #122334 0%, var(--ink-900) 60%);
   }
   .login-card{
     width:100%;
     max-width:380px;
     text-align:center;
   }
-  .brand-eyebrow{
-    font-family:var(--mono);
-    font-size:11px;
-    letter-spacing:.22em;
-    color:var(--fg-faint);
-    text-transform:uppercase;
-    margin-bottom:10px;
-  }
-  .brand-title{
-    font-family:var(--serif);
-    font-weight:500;
-    font-size:32px;
-    color:var(--paper);
-    margin:0 0 6px;
-  }
-  .brand-sub{
-    color:var(--fg-dim);
-    font-size:13px;
-    margin-bottom:34px;
-  }
 
-  .dial-wrap{
-    width:172px;
-    height:172px;
-    margin:0 auto 30px;
-    position:relative;
+  /* ---- Logo lockup (replaces old dial) ---- */
+  .logo-lockup{
+    display:inline-flex;
+    flex-direction:column;
+    align-items:center;
+    margin-bottom:22px;
+    transform-origin:center;
   }
-  .dial-ring{
-    transform-origin:86px 86px;
-    transition:transform .9s cubic-bezier(.2,.9,.2,1);
-  }
-  .dial-ring.spin{ transform:rotate(1080deg); }
-  .dial-ring.deny{ animation:denyshake .5s; }
+  .logo-lockup.deny{ animation:denyshake .5s; }
   @keyframes denyshake{
     0%,100%{transform:translateX(0);}
     20%{transform:translateX(-6px);}
@@ -111,14 +92,43 @@
     60%{transform:translateX(-4px);}
     80%{transform:translateX(3px);}
   }
-  .dial-center-label{
-    font-family:var(--mono);
-    font-size:11px;
-    letter-spacing:.14em;
-    fill:var(--fg-faint);
-    transition:fill .4s;
+  .logo-lockup .bar{ transform-box:fill-box; transform-origin:center; }
+  .logo-lockup.spin .bar1{ animation:barPulse .55s ease .0s; }
+  .logo-lockup.spin .bar2{ animation:barPulse .55s ease .1s; }
+  .logo-lockup.spin .bar3{ animation:barPulse .55s ease .2s; }
+  @keyframes barPulse{
+    0%{ transform:scaleY(1); }
+    45%{ transform:scaleY(1.4); }
+    100%{ transform:scaleY(1); }
   }
-  .dial-center-label.granted{ fill:var(--seal); }
+  .logo-rule{
+    width:56px; height:2px;
+    background:var(--brand-blue);
+    margin:14px 0 10px;
+  }
+  .logo-tagline{
+    font-family:var(--mono);
+    font-size:10px;
+    letter-spacing:.18em;
+    text-transform:uppercase;
+    color:var(--fg-faint);
+    transition:color .4s;
+  }
+  .logo-tagline.granted{ color:var(--brand-blue-mid); }
+
+  .brand-room-label{
+    font-family:var(--serif);
+    font-weight:700;
+    font-size:30px;
+    color:var(--paper);
+    margin:22px 0 6px;
+    letter-spacing:-.01em;
+  }
+  .brand-sub{
+    color:var(--fg-dim);
+    font-size:13px;
+    margin-bottom:34px;
+  }
 
   .code-form{ text-align:left; }
   .field-label{
@@ -151,7 +161,7 @@
     justify-content:center;
     gap:8px;
     background:var(--seal);
-    color:var(--ink-900);
+    color:#fff;
     border:none;
     padding:11px 18px;
     border-radius:var(--radius);
@@ -161,7 +171,7 @@
     cursor:pointer;
     transition:background .15s, transform .1s;
   }
-  .btn:hover{ background:#DAB559; }
+  .btn:hover{ background:var(--brand-blue-mid); }
   .btn:active{ transform:translateY(1px); }
   .btn-ghost{
     background:transparent;
@@ -198,9 +208,12 @@
     padding:0 20px;
     z-index:20;
   }
-  .topbar-brand{ display:flex; align-items:baseline; gap:10px; }
-  .topbar-brand .t1{ font-family:var(--mono); font-size:10px; letter-spacing:.18em; color:var(--fg-faint); text-transform:uppercase;}
-  .topbar-brand .t2{ font-family:var(--serif); font-size:18px; color:var(--paper); }
+  .topbar-brand{ display:flex; align-items:center; gap:12px; }
+  .topbar-logo{ display:block; }
+  .topbar-room-label{
+    font-family:var(--serif); font-weight:600; font-size:14px; color:var(--paper);
+    padding-left:12px; border-left:1px solid var(--hairline); letter-spacing:.01em;
+  }
   .topbar-right{ display:flex; align-items:center; gap:14px; }
   .who{
     font-family:var(--mono); font-size:11.5px; color:var(--fg-dim);
@@ -242,7 +255,7 @@
   }
   .view-head{ margin-bottom:26px; }
   .view-eyebrow{ font-family:var(--mono); font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--fg-faint); margin-bottom:6px;}
-  .view-title{ font-family:var(--serif); font-size:26px; color:var(--paper); font-weight:500; margin:0; }
+  .view-title{ font-family:var(--serif); font-size:26px; color:var(--paper); font-weight:700; margin:0; }
   .view-desc{ color:var(--fg-dim); font-size:13px; margin-top:6px; max-width:60ch; }
 
   /* ---------- Ledger table ---------- */
@@ -277,7 +290,7 @@
     padding:50px 10px; text-align:center; color:var(--fg-faint); font-size:13px;
     border-top:1px solid var(--hairline);
   }
-  .empty .el{ font-family:var(--serif); font-style:italic; color:var(--fg-dim); font-size:16px; margin-bottom:6px; }
+  .empty .el{ font-family:var(--serif); font-weight:600; color:var(--fg-dim); font-size:16px; margin-bottom:6px; }
 
   /* ---------- Drawer ---------- */
   .scrim{
@@ -303,7 +316,7 @@
   }
   .drawer-close:hover{ color:var(--fg); }
   .drawer-tier{ display:flex; align-items:center; gap:10px; margin-bottom:14px; }
-  .drawer h2{ font-family:var(--serif); font-weight:500; font-size:21px; color:var(--paper); margin:0 0 6px; }
+  .drawer h2{ font-family:var(--serif); font-weight:700; font-size:21px; color:var(--paper); margin:0 0 6px; }
   .drawer-meta{ font-family:var(--mono); font-size:11px; color:var(--fg-faint); margin-bottom:18px; }
   .drawer-desc{ color:var(--fg-dim); font-size:13px; margin-bottom:20px; }
   .drawer hr{ border:none; border-top:1px solid var(--hairline); margin:22px 0; }
@@ -328,7 +341,7 @@
     background:var(--ink-800); border:1px solid var(--hairline); border-radius:var(--radius);
     padding:22px; margin-bottom:22px;
   }
-  .panel h3{ font-family:var(--serif); font-weight:500; font-size:17px; color:var(--paper); margin:0 0 16px; }
+  .panel h3{ font-family:var(--serif); font-weight:700; font-size:17px; color:var(--paper); margin:0 0 16px; }
   .row-between{ display:flex; align-items:center; justify-content:space-between; }
   .code-line{
     display:flex; align-items:center; justify-content:space-between; gap:10px;
@@ -346,7 +359,7 @@
   .activity-row .a-when{ font-family:var(--mono); color:var(--fg-faint); white-space:nowrap; }
 
   .banner{
-    background:#2A2116; border:1px solid var(--seal-dim); color:#E4C98A;
+    background:#0F2333; border:1px solid var(--seal-dim); color:#8FD1F5;
     font-size:12.5px; padding:10px 14px; border-radius:var(--radius); margin-bottom:18px;
   }
 
@@ -400,6 +413,21 @@ function persistenceBanner(){
     integration is attached to this Vercel project and redeploy. The room still works for this session.</div>`;
 }
 
+/* ================= Logo (brand lockup) ================= */
+function logoSVG(opts){
+  opts = opts || {};
+  const h = opts.height || 60;
+  const wordColor = opts.wordColor || 'var(--paper)';
+  const w = h * (320/90);
+  return `
+  <svg class="${opts.cls||''}" viewBox="0 0 320 90" width="${w.toFixed(0)}" height="${h}" role="img" aria-label="Deeptrack">
+    <text x="0" y="62" font-family="'Space Grotesk', sans-serif" font-weight="700" font-size="52" fill="${wordColor}">deeptrack</text>
+    <rect class="bar bar1" x="245" y="20" width="15" height="42" fill="var(--brand-blue-light)"/>
+    <rect class="bar bar2" x="265" y="20" width="15" height="42" fill="var(--brand-blue-mid)"/>
+    <rect class="bar bar3" x="285" y="20" width="15" height="42" fill="var(--brand-blue-dark)"/>
+  </svg>`;
+}
+
 /* ================= Constants ================= */
 const CATS = [
   {id:'legal', label:'Legal'},
@@ -430,16 +458,16 @@ function nextDocCode(docs){
 }
 
 /* ================= State ================= */
-let access = null;   // {founderCode, cosCode, investors:[{id, firm, code, tier}]}
-let core   = null;   // {documents:[...]}
-let activity = [];   // [{ts, who, role, action, docId, docTitle}]
-let threads  = {};   // {docId: {investorId: [{author, text, ts}]}}
+let access = null;
+let core   = null;
+let activity = [];
+let threads  = {};
 
-let session = null;  // {role:'founder'|'cos'|'investor', firm, tier, investorId}
+let session = null;
 let activeCat = 'legal';
 let drawerDocId = null;
 let drawerFirmTab = null;
-let adminView = null; // 'settings' | 'activity' | null
+let adminView = null;
 
 const ROOT = document.getElementById('root');
 
@@ -505,23 +533,15 @@ function renderLogin(){
   <div class="login-screen">
     <div class="login-card">
       ${persistenceBanner()}
-      <div class="brand-eyebrow">Deeptrack Inc.</div>
-      <div class="brand-title">Data Room</div>
-      <div class="brand-sub">A single, governed record for fundraising diligence.</div>
 
-      <div class="dial-wrap">
-        <svg viewBox="0 0 172 172" width="172" height="172">
-          <g class="dial-ring" id="dialRing">
-            <circle cx="86" cy="86" r="80" fill="none" stroke="var(--hairline)" stroke-width="1.4"/>
-            <circle cx="86" cy="86" r="80" fill="none" stroke="var(--seal-dim)" stroke-width="1.4"
-                    stroke-dasharray="2 10" />
-            <circle cx="86" cy="86" r="58" fill="none" stroke="var(--hairline)" stroke-width="1"/>
-          </g>
-          <circle cx="86" cy="86" r="40" fill="var(--ink-800)" stroke="var(--hairline)" stroke-width="1"/>
-          <text x="86" y="83" text-anchor="middle" class="dial-center-label" id="dialLabel">LOCKED</text>
-          <text x="86" y="98" text-anchor="middle" class="dial-center-label" id="dialSub" style="font-size:9px;"></text>
-        </svg>
+      <div class="logo-lockup" id="logoLockup">
+        ${logoSVG({height:56})}
+        <div class="logo-rule"></div>
+        <div class="logo-tagline" id="logoTagline">Securing Your Digital Future</div>
       </div>
+
+      <div class="brand-room-label">Deeptrack Data Room</div>
+      <div class="brand-sub">A single, governed record for fundraising diligence.</div>
 
       <form class="code-form" id="loginForm">
         <label class="field-label" for="codeInput">Access code</label>
@@ -540,19 +560,19 @@ function renderLogin(){
   const form = document.getElementById('loginForm');
   const input = document.getElementById('codeInput');
   const err = document.getElementById('loginError');
-  const ring = document.getElementById('dialRing');
-  const label = document.getElementById('dialLabel');
-  const sub = document.getElementById('dialSub');
+  const lockup = document.getElementById('logoLockup');
+  const tagline = document.getElementById('logoTagline');
 
   form.addEventListener('submit', function(e){
     e.preventDefault();
     const result = tryCode(input.value);
     if(result){
-      ring.classList.remove('deny');
-      ring.classList.add('spin');
-      label.classList.add('granted');
-      label.textContent = result.role === 'founder' ? 'FOUNDER' : result.role === 'cos' ? 'CHIEF OF STAFF' : 'CLEARED';
-      sub.textContent = result.role === 'investor' ? result.firm.toUpperCase() : 'ACCESS GRANTED';
+      lockup.classList.remove('deny');
+      lockup.classList.add('spin');
+      tagline.classList.add('granted');
+      tagline.textContent = result.role === 'founder' ? 'Access granted — Founder'
+        : result.role === 'cos' ? 'Access granted — Chief of Staff'
+        : 'Access granted — ' + result.firm;
       err.textContent = '';
       setTimeout(async () => {
         session = result;
@@ -561,10 +581,9 @@ function renderLogin(){
         renderApp();
       }, 650);
     }else{
-      ring.classList.remove('spin');
-      // force reflow to restart animation
-      void ring.offsetWidth;
-      ring.classList.add('deny');
+      lockup.classList.remove('spin');
+      void lockup.offsetWidth;
+      lockup.classList.add('deny');
       err.textContent = "That code isn't on file. Contact Brian Koyundi for access.";
       input.select();
     }
@@ -599,8 +618,8 @@ function renderApp(){
   <div class="app active">
     <div class="topbar">
       <div class="topbar-brand">
-        <span class="t1">Deeptrack</span>
-        <span class="t2">Data Room</span>
+        ${logoSVG({height:22, cls:'topbar-logo'})}
+        <span class="topbar-room-label">Data Room</span>
       </div>
       <div class="topbar-right">
         <span class="who">${esc(roleLabel())} <span class="tier-chip">${TIER_LABEL[session.tier]}</span></span>
@@ -802,8 +821,6 @@ async function openDrawer(docId){
 
   if(session.role === 'investor'){
     await logActivity('opened a document', doc);
-  }else{
-    // still record admin views lightly? skip to keep signal clean for investor engagement
   }
 
   if(session.role === 'investor'){
@@ -850,7 +867,7 @@ function renderDrawer(doc){
     ${doc.link ? `<a href="${esc(doc.link)}" target="_blank" rel="noopener"><button class="btn btn-sm">Open document ↗</button></a>` : `<div class="faint" style="font-size:12.5px;">No link filed yet.</div>`}
 
     <hr>
-    <h3 style="font-family:var(--serif); font-weight:500; font-size:15px; color:var(--paper); margin:0 0 12px;">
+    <h3 style="font-family:var(--serif); font-weight:700; font-size:15px; color:var(--paper); margin:0 0 12px;">
       Diligence notes ${isAdmin ? '' : '— visible only to the company'}
     </h3>
     ${firmTabsHtml}
