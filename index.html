@@ -2,6 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex, notranslate">
+<meta name="googlebot" content="noindex, nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Deeptrack — Data Room</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -102,6 +104,7 @@
   }
   .btn:hover{ background:var(--brand-blue-mid); }
   .btn:active{ transform:translateY(1px); }
+  .btn:disabled{ opacity:.5; cursor:not-allowed; }
   .btn-ghost{ background:transparent; color:var(--fg-dim); border:1px solid var(--hairline); }
   .btn-ghost:hover{ color:var(--fg); border-color:var(--fg-faint); background:var(--ink-700); }
   .btn-danger{ background:var(--bad); color:#fff; }
@@ -252,6 +255,21 @@
 
   .banner{ background:#0F2333; border:1px solid var(--seal-dim); color:#8FD1F5; font-size:12.5px; padding:10px 14px; border-radius:var(--radius); margin-bottom:18px; }
 
+  /* ---------- Attach mode (link vs upload) ---------- */
+  .attach-toggle{ display:flex; gap:8px; margin-bottom:10px; }
+  .attach-tab{ font-family:var(--mono); font-size:11px; padding:6px 11px; border-radius:2px; border:1px solid var(--hairline); color:var(--fg-dim); cursor:pointer; }
+  .attach-tab.active{ border-color:var(--seal); color:var(--paper); background:var(--ink-700); }
+  .file-drop{
+    border:1px dashed var(--hairline); border-radius:var(--radius); padding:16px;
+    display:flex; align-items:center; gap:12px; background:var(--ink-900);
+  }
+  .file-drop.dragover{ border-color:var(--brand-blue); background:var(--ink-700); }
+  .file-drop-info{ flex:1; font-size:12.5px; color:var(--fg-dim); }
+  .file-drop-info .fname{ color:var(--fg); }
+  .file-drop-hint{ font-size:11.5px; color:var(--fg-faint); margin-top:6px; }
+  .upload-progress{ font-family:var(--mono); font-size:11.5px; color:var(--brand-blue-mid); margin-top:8px; }
+  .upload-error{ font-size:12px; color:var(--bad); margin-top:8px; }
+
   @media (max-width: 760px){
     .sidebar{ display:none; }
     .main{ margin-left:0; padding:24px 18px 70px; }
@@ -291,6 +309,35 @@ function persistenceBanner(){
   if(persistent) return '';
   return `<div class="banner">Storage isn't connected right now, so nothing will be saved — check that the Upstash/KV
     integration is attached to this Vercel project and redeploy. The room still works for this session.</div>`;
+}
+
+/* ================= File upload (Vercel Blob, direct client upload) ================= */
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10MB — enforced both here and server-side
+let blobClientPromise = null;
+function loadBlobClient(){
+  if(!blobClientPromise){
+    blobClientPromise = import('https://esm.sh/@vercel/blob@0.27.1/client');
+  }
+  return blobClientPromise;
+}
+
+async function uploadFile(file, onProgressText){
+  if(file.size > MAX_UPLOAD_BYTES){
+    throw new Error('That file is ' + (file.size/1024/1024).toFixed(1) + 'MB — uploads are capped at 10MB. Use the Link option for larger files (Drive, Notion, etc).');
+  }
+  if(onProgressText) onProgressText('Uploading…');
+  let blobClient;
+  try{
+    blobClient = await loadBlobClient();
+  }catch(e){
+    throw new Error('Could not load the upload client — check your connection and try again.');
+  }
+  const blob = await blobClient.upload(file.name, file, {
+    access: 'public',
+    handleUploadUrl: '/api/upload',
+    contentType: file.type || 'application/octet-stream',
+  });
+  return { url: blob.url, pathname: blob.pathname };
 }
 
 /* ================= Logo ================= */
@@ -473,6 +520,8 @@ function buildSeedDocuments(){
           subfolder: sub.id,
           tier: d.tier,
           link: '',
+          sourceType: 'link',
+          fileName: '',
           description: d.desc,
           addedBy: 'Founder',
           addedAt,
@@ -512,7 +561,7 @@ let pendingNDAInvestor = null;
 
 const ROOT = document.getElementById('root');
 
-function defaultAccess(){ return { founderCode:'FOUNDER-4471', cosCode:'STAFF-2290', investors:[] }; }
+function defaultAccess(){ return { founderCode:'1313', cosCode:'STAFF-2290', investors:[] }; }
 function defaultCore(){ return { documents: buildSeedDocuments() }; }
 
 async function loadAll(){
@@ -928,8 +977,24 @@ function renderAddDocForm(catId, subId){
           <input type="text" id="fVer" placeholder="1.0" value="1.0">
         </div>
         <div class="full">
-          <label class="field-label">Link (Drive, Notion, etc.)</label>
-          <input type="url" id="fLink" placeholder="https://">
+          <label class="field-label">Document source</label>
+          <div class="attach-toggle">
+            <div class="attach-tab active" data-mode="link">Link to a URL</div>
+            <div class="attach-tab" data-mode="upload">Upload a file</div>
+          </div>
+          <div id="attachLinkPane">
+            <input type="url" id="fLink" placeholder="https://">
+          </div>
+          <div id="attachUploadPane" class="hidden">
+            <div class="file-drop" id="fileDrop">
+              <input type="file" id="fFile" class="hidden">
+              <button type="button" class="btn btn-ghost btn-sm" id="fileChooseBtn">Choose file</button>
+              <div class="file-drop-info" id="fileDropInfo">No file selected — or drag one in here.</div>
+            </div>
+            <div class="file-drop-hint">Uploads are capped at 10MB. For larger files, use the Link option and point at Drive, Notion, or wherever the master copy lives.</div>
+            <div class="upload-progress hidden" id="uploadProgress"></div>
+            <div class="upload-error hidden" id="uploadError"></div>
+          </div>
         </div>
         <div class="full">
           <label class="field-label">Note (optional)</label>
@@ -942,17 +1007,90 @@ function renderAddDocForm(catId, subId){
       </div>
     </div>
   `;
+
+  let attachMode = 'link';
+  let chosenFile = null;
+
   const catSelect = document.getElementById('fCat');
   const subSelect = document.getElementById('fSub');
   catSelect.addEventListener('change', () => {
     const c = catById(catSelect.value);
     subSelect.innerHTML = c.sub.map(s => `<option value="${s.id}">${esc(s.label)}</option>`).join('');
   });
+
+  const linkPane = document.getElementById('attachLinkPane');
+  const uploadPane = document.getElementById('attachUploadPane');
+  panel.querySelectorAll('.attach-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      attachMode = tab.getAttribute('data-mode');
+      panel.querySelectorAll('.attach-tab').forEach(t => t.classList.toggle('active', t===tab));
+      linkPane.classList.toggle('hidden', attachMode!=='link');
+      uploadPane.classList.toggle('hidden', attachMode!=='upload');
+    });
+  });
+
+  const fileInput = document.getElementById('fFile');
+  const fileDrop = document.getElementById('fileDrop');
+  const fileInfo = document.getElementById('fileDropInfo');
+  const uploadErrorEl = document.getElementById('uploadError');
+  document.getElementById('fileChooseBtn').addEventListener('click', () => fileInput.click());
+  function setChosenFile(file){
+    chosenFile = file;
+    uploadErrorEl.classList.add('hidden');
+    if(file){
+      const sizeTxt = file.size > 1024*1024 ? (file.size/1024/1024).toFixed(1)+'MB' : Math.ceil(file.size/1024)+'KB';
+      fileInfo.innerHTML = `<span class="fname">${esc(file.name)}</span> · ${sizeTxt}`;
+    }else{
+      fileInfo.textContent = 'No file selected — or drag one in here.';
+    }
+  }
+  fileInput.addEventListener('change', () => setChosenFile(fileInput.files[0] || null));
+  ['dragover','dragenter'].forEach(evt => fileDrop.addEventListener(evt, e => { e.preventDefault(); fileDrop.classList.add('dragover'); }));
+  ['dragleave','drop'].forEach(evt => fileDrop.addEventListener(evt, e => { e.preventDefault(); fileDrop.classList.remove('dragover'); }));
+  fileDrop.addEventListener('drop', e => {
+    const f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if(f) setChosenFile(f);
+  });
+
   document.getElementById('fCancel').addEventListener('click', () => { panel.innerHTML=''; });
+
   document.getElementById('fSave').addEventListener('click', async () => {
     const title = document.getElementById('fTitle').value.trim();
-    const link = document.getElementById('fLink').value.trim();
     if(!title){ document.getElementById('fTitle').focus(); return; }
+
+    const saveBtn = document.getElementById('fSave');
+    const progressEl = document.getElementById('uploadProgress');
+    uploadErrorEl.classList.add('hidden');
+
+    let link = '';
+    let sourceType = 'link';
+    let fileName = '';
+
+    if(attachMode === 'upload'){
+      if(!chosenFile){
+        uploadErrorEl.textContent = 'Choose a file first, or switch to the Link tab.';
+        uploadErrorEl.classList.remove('hidden');
+        return;
+      }
+      saveBtn.disabled = true;
+      progressEl.classList.remove('hidden');
+      try{
+        const result = await uploadFile(chosenFile, (txt) => { progressEl.textContent = txt; });
+        link = result.url;
+        sourceType = 'upload';
+        fileName = chosenFile.name;
+      }catch(err){
+        saveBtn.disabled = false;
+        progressEl.classList.add('hidden');
+        uploadErrorEl.textContent = err.message || 'Upload failed. Try again, or use the Link tab instead.';
+        uploadErrorEl.classList.remove('hidden');
+        return;
+      }
+      progressEl.classList.add('hidden');
+    }else{
+      link = document.getElementById('fLink').value.trim();
+    }
+
     const addedAt = nowISO();
     const doc = {
       id: uid('doc'),
@@ -962,6 +1100,8 @@ function renderAddDocForm(catId, subId){
       subfolder: subSelect.value,
       tier: parseInt(document.getElementById('fTier').value,10),
       link,
+      sourceType,
+      fileName,
       description: document.getElementById('fDesc').value.trim(),
       addedBy: roleLabel(),
       addedAt,
@@ -1032,6 +1172,12 @@ function renderDrawer(doc){
       <span class="vdate">${fmtDate(v.date)}</span>
     </div>`).join('') || `<div class="faint" style="font-size:12.5px; padding:6px 0;">No version history.</div>`;
 
+  const openLabel = doc.sourceType === 'upload' ? 'Download document ↓' : 'Open document ↗';
+  const linkBlock = doc.link
+    ? `<a href="${esc(doc.link)}" target="_blank" rel="noopener"><button class="btn btn-sm">${openLabel}</button></a>
+       ${doc.sourceType === 'upload' && doc.fileName ? `<div class="faint mono" style="font-size:11px; margin-top:8px;">${esc(doc.fileName)} · uploaded to the room</div>` : ''}`
+    : `<div class="faint" style="font-size:12.5px;">No file or link filed yet.</div>`;
+
   drawer.innerHTML = `
     <button class="drawer-close" id="drawerCloseBtn">← Back to room</button>
     <div class="breadcrumb">${esc(cat?cat.label:'')} <span>/</span> ${esc(sub?sub.label:'')}</div>
@@ -1039,7 +1185,7 @@ function renderDrawer(doc){
     <h2>${esc(doc.title)}</h2>
     <div class="drawer-meta">${esc(doc.code)} · filed by ${esc(doc.addedBy)} · ${fmtDate(doc.addedAt)}</div>
     ${doc.description ? `<div class="drawer-desc">${esc(doc.description)}</div>` : ''}
-    ${doc.link ? `<a href="${esc(doc.link)}" target="_blank" rel="noopener"><button class="btn btn-sm">Open document ↗</button></a>` : `<div class="faint" style="font-size:12.5px;">No link filed yet.</div>`}
+    ${linkBlock}
 
     <hr>
     <h3 class="subhead">Version history</h3>

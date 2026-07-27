@@ -38,6 +38,24 @@ on the free Hobby plan.
 Free tier limits (10K commands/day, 256MB) are miles more than a five-person
 data room will ever use.
 
+## 2b. Attach free file storage (Vercel Blob) — for manual uploads
+
+The room supports two ways to attach a document: a link to somewhere the file
+already lives (Drive, Notion, etc.), or uploading the file directly into the
+room. The upload path needs its own storage:
+
+1. Project → **Storage** tab → **Create Database** → **Blob** → **Free** tier.
+2. Connect it to this project — Vercel injects `BLOB_READ_WRITE_TOKEN`
+   automatically.
+3. **Redeploy** once so the function picks it up.
+
+Direct uploads are capped at **10MB per file**. Files upload straight from
+the browser to Blob storage (not through the serverless function), so this
+cap is a deliberate setting, not a platform limit — it can be raised later by
+changing `MAX_UPLOAD_BYTES` in `index.html` and `api/upload.js`. For anything
+bigger than 10MB, use the Link tab instead and point at wherever the file
+already lives.
+
 ## 3. Point investorrelations.deeptrack.io at it
 
 1. Project → **Settings → Domains** → add `investorrelations.deeptrack.io`.
