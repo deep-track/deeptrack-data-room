@@ -183,7 +183,7 @@
 
   /* ---------- Ledger table ---------- */
   .ledger{ border-top:1px solid var(--hairline); }
-  .ledger-row{ display:grid; grid-template-columns:70px 1fr 60px 100px 90px 40px; align-items:center; gap:14px; padding:15px 4px; border-bottom:1px solid var(--hairline-soft); cursor:pointer; }
+  .ledger-row{ display:grid; grid-template-columns:70px 1fr 60px 100px 90px 40px 34px; align-items:center; gap:14px; padding:15px 4px; border-bottom:1px solid var(--hairline-soft); cursor:pointer; }
   .ledger-row:hover{ background:var(--ink-800); }
   .ledger-id{ font-family:var(--mono); font-size:12px; color:var(--fg-faint); }
   .ledger-main .title{ color:var(--fg); font-size:14px; }
@@ -192,6 +192,8 @@
   .ledger-ver{ font-family:var(--mono); font-size:11px; color:var(--fg-faint); }
   .ledger-date{ font-family:var(--mono); font-size:11.5px; color:var(--fg-faint); text-align:right; }
   .ledger-qa{ font-family:var(--mono); font-size:11px; color:var(--fg-faint); text-align:right; }
+  .ledger-dl{ display:flex; align-items:center; justify-content:center; width:30px; height:30px; border-radius:7px; border:1px solid var(--hairline); background:transparent; color:var(--fg-dim); cursor:pointer; }
+  .ledger-dl:hover{ background:var(--ink-800); color:var(--fg); border-color:var(--fg-faint); }
 
   .stamp{ width:30px; height:30px; }
   .stamp circle.ring{ fill:none; stroke:var(--hairline); stroke-width:1.4; }
@@ -277,7 +279,7 @@
     .sidebar{ display:none; }
     .main{ margin-left:0; padding:24px 18px 70px; }
     .topbar-search{ display:none; }
-    .ledger-row{ grid-template-columns:50px 1fr 30px; }
+    .ledger-row{ grid-template-columns:50px 1fr 30px 34px; }
     .ledger-date, .ledger-qa, .ledger-ver{ display:none; }
     .form-grid{ grid-template-columns:1fr; }
   }
@@ -314,6 +316,33 @@ function persistenceBanner(){
     integration is attached to this Vercel project and redeploy. The room still works for this session.</div>`;
 }
 
+/* ================= Safe read-modify-write helpers =================
+   Every save re-fetches the latest copy from Redis first, applies the
+   change on top of THAT, then saves — instead of overwriting the whole
+   key with a possibly-stale in-memory copy. This prevents one open tab
+   from silently wiping out another tab's changes (last-write-wins). */
+async function saveCore(mutateFn){
+  const fresh = await stGet('dataroom-core');
+  core = fresh || core || defaultCore();
+  mutateFn(core);
+  await stSet('dataroom-core', core);
+  return core;
+}
+async function saveAccess(mutateFn){
+  const fresh = await stGet('dataroom-access');
+  access = fresh || access || defaultAccess();
+  mutateFn(access);
+  await stSet('dataroom-access', access);
+  return access;
+}
+async function saveThreads(mutateFn){
+  const fresh = await stGet('dataroom-threads');
+  threads = fresh || threads || {};
+  mutateFn(threads);
+  await stSet('dataroom-threads', threads);
+  return threads;
+}
+
 /* ================= File upload (Vercel Blob, direct client upload) ================= */
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10MB — enforced both here and server-side
 let blobClientPromise = null;
@@ -341,6 +370,37 @@ async function uploadFile(file, onProgressText){
     contentType: file.type || 'application/octet-stream',
   });
   return { url: blob.url, pathname: blob.pathname };
+}
+
+/* ================= Download ================= */
+function downloadIcon(){
+  return `<svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M7.5 1.5V10M7.5 10L4 6.5M7.5 10L11 6.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 12.5H13" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>`;
+}
+async function downloadDoc(doc, btnEl){
+  if(!doc || !doc.link) return;
+  if(doc.sourceType !== 'upload'){
+    window.open(doc.link, '_blank', 'noopener');
+    return;
+  }
+  const orig = btnEl ? btnEl.innerHTML : null;
+  if(btnEl) btnEl.innerHTML = '<span class="mono" style="font-size:10px;">…</span>';
+  try{
+    const r = await fetch(doc.link);
+    if(!r.ok) throw new Error('fetch failed: ' + r.status);
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = doc.fileName || doc.title || 'document';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }catch(e){
+    window.open(doc.link, '_blank', 'noopener');
+  }finally{
+    if(btnEl) btnEl.innerHTML = orig;
+  }
 }
 
 /* ================= Logo ================= */
@@ -586,13 +646,16 @@ async function loadAll(){
 }
 
 async function logActivity(action, doc){
-  activity.unshift({
+  const entry = {
     ts: nowISO(),
     who: session.role === 'investor' ? session.firm : (session.role === 'founder' ? 'Founder' : 'Chief of Staff'),
     role: session.role, action,
     docId: doc ? doc.id : null,
     docTitle: doc ? doc.title : null
-  });
+  };
+  const fresh = await stGet('dataroom-activity');
+  activity = fresh || activity || [];
+  activity.unshift(entry);
   activity = activity.slice(0, 400);
   await stSet('dataroom-activity', activity);
 }
@@ -702,8 +765,11 @@ function renderNDA(){
   check.addEventListener('change', () => { acceptBtn.disabled = !check.checked; });
   acceptBtn.addEventListener('click', async () => {
     if(!pendingNDAInvestor) return;
-    pendingNDAInvestor.ndaAcceptedAt = nowISO();
-    await stSet('dataroom-access', access);
+    const invId = pendingNDAInvestor.id;
+    await saveAccess(a => {
+      const inv = a.investors.find(i => i.id === invId);
+      if(inv) inv.ndaAcceptedAt = nowISO();
+    });
     await logActivity('signed in');
     await logActivity('accepted the confidentiality terms');
     pendingNDAInvestor = null;
@@ -873,6 +939,7 @@ function renderSubfolderView(catId, subId){
       ${stampSVG(d.tier)}
       <div class="ledger-date">${fmtDate(d.addedAt)}</div>
       <div class="ledger-qa">${qaCount ? qaCount + ' note' + (qaCount>1?'s':'') : ''}</div>
+      ${d.link ? `<button class="ledger-dl" data-dl="${d.id}" title="${d.sourceType==='upload'?'Download':'Open'}" aria-label="Download">${downloadIcon()}</button>` : '<span></span>'}
     </div>`;
   }).join('');
 
@@ -894,6 +961,11 @@ function renderSubfolderView(catId, subId){
 
   main.querySelector('[data-nav="cat"]').addEventListener('click', () => { activeSub = null; renderMainContent(); renderSidebar(); });
   main.querySelectorAll('.ledger-row').forEach(el => el.addEventListener('click', () => openDrawer(el.getAttribute('data-doc'))));
+  main.querySelectorAll('[data-dl]').forEach(el => el.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    const d = docs.find(x => x.id === el.getAttribute('data-dl'));
+    downloadDoc(d, el);
+  }));
   if(isAdmin){
     const btn = document.getElementById('addDocBtn');
     if(btn) btn.addEventListener('click', () => renderAddDocForm(catId, subId));
@@ -928,6 +1000,7 @@ function renderSearchResults(q){
       ${stampSVG(d.tier)}
       <div class="ledger-date">${fmtDate(d.addedAt)}</div>
       <div class="ledger-qa"></div>
+      ${d.link ? `<button class="ledger-dl" data-dl="${d.id}" title="${d.sourceType==='upload'?'Download':'Open'}" aria-label="Download">${downloadIcon()}</button>` : '<span></span>'}
     </div>`;
   }).join('');
 
@@ -941,6 +1014,11 @@ function renderSearchResults(q){
     ${results.length ? '' : `<div class="empty"><div class="el">No matches.</div>Try a different term, or browse the room index on the left.</div>`}
   `;
   main.querySelectorAll('.ledger-row').forEach(el => el.addEventListener('click', () => openDrawer(el.getAttribute('data-doc'))));
+  main.querySelectorAll('[data-dl]').forEach(el => el.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    const d = results.find(x => x.id === el.getAttribute('data-dl'));
+    downloadDoc(d, el);
+  }));
 }
 
 /* ================= Add document form ================= */
@@ -1110,8 +1188,7 @@ function renderAddDocForm(catId, subId){
       addedAt,
       versions: [{ version: document.getElementById('fVer').value.trim() || '1.0', date: addedAt, note:'Initial upload' }]
     };
-    core.documents.push(doc);
-    await stSet('dataroom-core', core);
+    await saveCore(c => { c.documents.push(doc); });
     await logActivity('filed a document', doc);
     activeCat = doc.category; activeSub = doc.subfolder;
     renderApp();
@@ -1177,7 +1254,7 @@ function renderDrawer(doc){
 
   const openLabel = doc.sourceType === 'upload' ? 'Download document ↓' : 'Open document ↗';
   const linkBlock = doc.link
-    ? `<a href="${esc(doc.link)}" target="_blank" rel="noopener"><button class="btn btn-sm">${openLabel}</button></a>
+    ? `<button class="btn btn-sm" id="drawerDlBtn">${openLabel}</button>
        ${doc.sourceType === 'upload' && doc.fileName ? `<div class="faint mono" style="font-size:11px; margin-top:8px;">${esc(doc.fileName)} · uploaded to the room</div>` : ''}`
     : `<div class="faint" style="font-size:12.5px;">No file or link filed yet.</div>`;
 
@@ -1212,6 +1289,8 @@ function renderDrawer(doc){
   `;
 
   document.getElementById('drawerCloseBtn').addEventListener('click', closeDrawer);
+  const drawerDlBtn = document.getElementById('drawerDlBtn');
+  if(drawerDlBtn) drawerDlBtn.addEventListener('click', () => downloadDoc(doc, drawerDlBtn));
   drawer.querySelectorAll('[data-firm]').forEach(el => {
     el.addEventListener('click', () => { drawerFirmTab = el.getAttribute('data-firm'); renderDrawer(doc); });
   });
@@ -1223,11 +1302,15 @@ function renderDrawer(doc){
       const noteInput = document.getElementById('vNewNote');
       const version = verInput.value.trim();
       if(!version) { verInput.focus(); return; }
-      doc.versions = doc.versions || [];
-      doc.versions.push({ version, date: nowISO(), note: noteInput.value.trim() });
-      await stSet('dataroom-core', core);
-      await logActivity('added version ' + version + ' to', doc);
-      renderDrawer(doc);
+      const docId = doc.id;
+      const newVersion = { version, date: nowISO(), note: noteInput.value.trim() };
+      const fresh = await saveCore(c => {
+        const d = c.documents.find(x => x.id === docId);
+        if(d){ d.versions = d.versions || []; d.versions.push(newVersion); }
+      });
+      const updatedDoc = fresh.documents.find(x => x.id === docId) || doc;
+      await logActivity('added version ' + version + ' to', updatedDoc);
+      renderDrawer(updatedDoc);
     });
   }
 
@@ -1239,10 +1322,13 @@ function renderDrawer(doc){
       if(!text) return;
       const firmId = session.role === 'investor' ? session.investorId : drawerFirmTab;
       if(!firmId) return;
-      threads[doc.id] = threads[doc.id] || {};
-      threads[doc.id][firmId] = threads[doc.id][firmId] || [];
-      threads[doc.id][firmId].push({ author: roleLabel(), text, ts: nowISO() });
-      await stSet('dataroom-threads', threads);
+      const docId = doc.id;
+      const newMsg = { author: roleLabel(), text, ts: nowISO() };
+      await saveThreads(t => {
+        t[docId] = t[docId] || {};
+        t[docId][firmId] = t[docId][firmId] || [];
+        t[docId][firmId].push(newMsg);
+      });
       await logActivity(session.role==='investor' ? 'asked a question' : 'replied', doc);
       renderDrawer(doc);
     });
@@ -1351,8 +1437,7 @@ function renderSettingsView(){
     const f = document.getElementById('setFounder').value.trim();
     const c = document.getElementById('setCos').value.trim();
     if(!f || !c) return;
-    access.founderCode = f; access.cosCode = c;
-    await stSet('dataroom-access', access);
+    await saveAccess(a => { a.founderCode = f; a.cosCode = c; });
     renderApp();
   });
 
@@ -1361,8 +1446,7 @@ function renderSettingsView(){
     if(!firm) return;
     const tier = parseInt(document.getElementById('invTier').value,10);
     const inv = { id: uid('inv'), firm, tier, code: uid('DT-INV'), ndaAcceptedAt: null };
-    access.investors.push(inv);
-    await stSet('dataroom-access', access);
+    await saveAccess(a => { a.investors.push(inv); });
     await logActivity('issued a code for ' + firm);
     renderSettingsView();
   });
@@ -1387,10 +1471,13 @@ function renderInvestorList(){
 
   wrap.querySelectorAll('[data-upgrade]').forEach(el => {
     el.addEventListener('click', async () => {
-      const inv = access.investors.find(i => i.id === el.getAttribute('data-upgrade'));
-      inv.tier = inv.tier === 1 ? 2 : 1;
-      await stSet('dataroom-access', access);
-      await logActivity('changed clearance for ' + inv.firm);
+      const id = el.getAttribute('data-upgrade');
+      let firmName = '';
+      await saveAccess(a => {
+        const inv = a.investors.find(i => i.id === id);
+        if(inv){ inv.tier = inv.tier === 1 ? 2 : 1; firmName = inv.firm; }
+      });
+      await logActivity('changed clearance for ' + firmName);
       renderSettingsView();
     });
   });
@@ -1398,14 +1485,41 @@ function renderInvestorList(){
     el.addEventListener('click', async () => {
       const id = el.getAttribute('data-revoke');
       const inv = access.investors.find(i => i.id === id);
-      if(!confirm('Revoke access for ' + inv.firm + '? Their code will stop working immediately.')) return;
-      access.investors = access.investors.filter(i => i.id !== id);
-      await stSet('dataroom-access', access);
+      if(!inv || !confirm('Revoke access for ' + inv.firm + '? Their code will stop working immediately.')) return;
+      await saveAccess(a => { a.investors = a.investors.filter(i => i.id !== id); });
       await logActivity('revoked access for ' + inv.firm);
       renderSettingsView();
     });
   });
 }
+
+/* ================= Live sync =================
+   Polls for changes made by other open sessions (e.g. two people in the
+   room at once) and refreshes the view so nobody is looking at a stale
+   copy. Skipped while the user is actively typing so we don't yank an
+   in-progress form or message out from under them. */
+function userIsTyping(){
+  const el = document.activeElement;
+  return !!(el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA'));
+}
+async function pollForUpdates(){
+  if(!session || userIsTyping()) return;
+  try{
+    const [freshCore, freshAccess, freshThreads] = await Promise.all([
+      stGet('dataroom-core'), stGet('dataroom-access'), stGet('dataroom-threads')
+    ]);
+    let changed = false;
+    if(freshCore && JSON.stringify(freshCore) !== JSON.stringify(core)){ core = freshCore; changed = true; }
+    if(freshAccess && JSON.stringify(freshAccess) !== JSON.stringify(access)){ access = freshAccess; changed = true; }
+    if(freshThreads && JSON.stringify(freshThreads) !== JSON.stringify(threads)){ threads = freshThreads; changed = true; }
+    if(changed){
+      if(drawerDocId){ const d = core.documents.find(x => x.id === drawerDocId); if(d) renderDrawer(d); else closeDrawer(); }
+      else renderApp();
+    }
+  }catch(e){ /* stay on current state if a poll fails */ }
+}
+setInterval(pollForUpdates, 8000);
+document.addEventListener('visibilitychange', () => { if(!document.hidden) pollForUpdates(); });
 
 /* ================= Boot ================= */
 async function boot(){
