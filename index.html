@@ -378,31 +378,36 @@ function downloadIcon(){
 }
 async function downloadDoc(doc, btnEl){
   if(!doc || !doc.link) return;
+
   if(doc.sourceType !== 'upload'){
     window.open(doc.link, '_blank', 'noopener');
     return;
   }
+
   const orig = btnEl ? btnEl.innerHTML : null;
-  if(btnEl) btnEl.innerHTML = '<span class="mono" style="font-size:10px;">…</span>';
-  try{
-    const r = await fetch(doc.link);
-    if(!r.ok) throw new Error('fetch failed: ' + r.status);
-    const blob = await r.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = doc.fileName || doc.title || 'document';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 4000);
-  }catch(e){
-    window.open(doc.link, '_blank', 'noopener');
-  }finally{
+  if(btnEl) btnEl.innerHTML = '…';
+
+  try {
+    // Ask our server to generate an authorized download URL
+    const r = await fetch('/api/download?url=' + encodeURIComponent(doc.link));
+
+    if(!r.ok){
+      const data = await r.json().catch(() => ({}));
+      throw new Error(data.error || 'Could not create download link');
+    }
+
+    const data = await r.json();
+
+    // Open the authorized URL directly
+    window.open(data.url, '_blank', 'noopener');
+
+  } catch(e) {
+    console.error('Download failed:', e);
+    alert(e.message || 'Download failed.');
+  } finally {
     if(btnEl) btnEl.innerHTML = orig;
   }
 }
-
 /* ================= Logo ================= */
 function logoSVG(opts){
   opts = opts || {};
