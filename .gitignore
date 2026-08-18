@@ -1,0 +1,9 @@
+.vercel
+node_modules/
+dist/
+.vite/
+.env
+.env.*
+!.env.example
+*.tsbuildinfo
+smoke-test-document.txt
