@@ -1,6 +1,8 @@
 import { Activity, BadgeCheck, Download, FileText, FolderClosed, Info, LayoutDashboard, LockKeyhole, LogOut, Plus, Search, Settings2, ShieldCheck, UserRoundCog, UsersRound, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { isAdministrator, roleDetails, type ReviewSession } from "./auth";
+import { isAuth0Configured, sessionFromAuth0, type Auth0Bridge } from "./auth0-config";
+import { configureAccessTokenProvider } from "./lib/repository";
 import { LoginScreen } from "./components/LoginScreen";
 import { UploadDialog } from "./components/UploadDialog";
 import { dataRoomRepository, formatBytes } from "./lib/repository";
@@ -14,8 +16,14 @@ type ActivityEvent = { at: string; event: string; actor: string; detail: string 
 function formatDate(value: string) { return new Intl.DateTimeFormat("en", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(value)); }
 function readableTime(value: string) { return new Intl.DateTimeFormat("en", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(value)); }
 
-export default function App() {
+export default function App({ auth0 = null }: { auth0?: Auth0Bridge | null }) {
   const [session, setSession] = useState<ReviewSession | null>(null);
+  useEffect(() => {
+    if (!auth0) return;
+    configureAccessTokenProvider(() => auth0.getAccessTokenSilently({ authorizationParams: { audience: import.meta.env.VITE_AUTH0_AUDIENCE } }));
+    if (auth0.isAuthenticated && auth0.user) setSession(sessionFromAuth0(auth0.user));
+    else if (!auth0.isLoading) setSession(null);
+  }, [auth0?.isAuthenticated, auth0?.isLoading, auth0?.user]);
   const [documents, setDocuments] = useState<DataRoomDocument[]>([]);
   const [activeCategory, setActiveCategory] = useState(categories[0]);
   const [query, setQuery] = useState("");
@@ -38,7 +46,10 @@ export default function App() {
 
   function log(event: string, detail: string) { if (session) setActivity((current) => [{ at: new Date().toISOString(), event, detail, actor: session.displayName }, ...current].slice(0, 24)); }
   function enter(next: ReviewSession) { setSession(next); setView("documents"); log("Session opened", `${roleDetails[next.role].label} review mode`); }
-  function leave() { setSession(null); setSelected(null); setShowUpload(false); setActivity([]); }
+  function leave() {
+    setSession(null); setSelected(null); setShowUpload(false); setActivity([]);
+    if (auth0) auth0.logout({ logoutParams: { returnTo: window.location.origin } });
+  }
 
   async function download(document: DataRoomDocument) {
     if (!session || document.tier > session.clearanceTier) return setError("This document is not available for the current role and clearance tier.");
@@ -53,7 +64,8 @@ export default function App() {
     } catch (cause) { setError(cause instanceof Error ? cause.message : "The document could not be downloaded."); } finally { setDownloadingId(null); }
   }
 
-  if (!session) return <LoginScreen onContinue={enter} />;
+  if (auth0?.isLoading) return <main className="login-page"><section className="login-card-wrap"><div className="login-card"><p className="eyebrow">Secure entry</p><h2>Checking your session…</h2><p className="login-note">Verifying your Auth0 identity before loading the data room.</p></div></section></main>;
+  if (!session) return <LoginScreen onContinue={enter} auth0={auth0} />;
   const role = roleDetails[session.role];
   return <div className="app-shell"><aside className="sidebar"><div className="brand"><span className="brand-mark" aria-hidden="true">///</span><div><strong>deeptrack</strong><span>Data room</span></div></div><div className="role-card"><p>{role.label}</p><span>{session.displayName}</span><small>{administrator ? "Administrative review" : "Read-only review"}</small></div><nav aria-label="Data room navigation"><p className="nav-caption">Workspace</p><button className={`nav-item ${view === "documents" ? "active" : ""}`} onClick={() => setView("documents")}><LayoutDashboard size={17} /> Documents</button>{administrator && <><button className={`nav-item ${view === "access" ? "active" : ""}`} onClick={() => setView("access")}><UsersRound size={17} /> Access & invitations</button><button className={`nav-item ${view === "governance" ? "active" : ""}`} onClick={() => setView("governance")}><Settings2 size={17} /> Governance & audit</button></>} {view === "documents" && <><p className="nav-caption">Folders</p>{categories.map((category) => <button key={category} className={`nav-item ${activeCategory === category ? "active" : ""}`} onClick={() => setActiveCategory(category)}><FolderClosed size={17} /><span>{category}</span><small>{category === "All documents" ? permittedDocuments.length : permittedDocuments.filter((document) => document.category === category).length}</small></button>)}</>}</nav><div className="sidebar-foot"><ShieldCheck size={17} /><span>Production access requires server-side identity and authorization.</span></div></aside><main><header className="topbar"><div><p className="eyebrow">Investor relations · {role.label}</p><h1>Deeptrack data room</h1></div><div className="topbar-actions"><div className="status"><span></span> Review mode</div>{administrator && <button className="primary-button" onClick={() => setShowUpload(true)}><Plus size={17} /> File document</button>}<button className="session-button" onClick={leave}><LogOut size={16} /> End session</button></div></header><section className="notice"><Info size={18} /><div><strong>{administrator ? "Administrative review mode is active." : "Investor read-only review mode is active."}</strong><p>{administrator ? "Founder and Investor Relations controls are represented for workflow review. Production permissions must be enforced by the data-room API." : "You may view permitted records and download allowed documents. Upload, editing, access changes, and administration are unavailable to investors."}</p></div></section><section className="workspace">{error && <div className="error-banner" role="alert"><span>{error}</span><button type="button" onClick={() => setError("")} aria-label="Dismiss error"><X size={16} /></button></div>}{view === "documents" && <DocumentsView session={session} administrator={administrator} activeCategory={activeCategory} setActiveCategory={setActiveCategory} query={query} setQuery={setQuery} documents={documents} visibleDocuments={visibleDocuments} loading={loading} downloadingId={downloadingId} onUpload={() => setShowUpload(true)} onSelect={setSelected} onDownload={download} />}{view === "access" && administrator && <AccessView role={session.role} onLog={log} />}{view === "governance" && administrator && <GovernanceView activity={activity} />}</section></main>{showUpload && administrator && <UploadDialog repository={dataRoomRepository} onClose={() => setShowUpload(false)} onCreated={(document) => { setDocuments((current) => [document, ...current]); setShowUpload(false); setSelected(document); log("Document filed", `${document.title} · local review record`); }} />}{selected && <DocumentDrawer document={selected} session={session} onClose={() => setSelected(null)} onDownload={download} downloading={downloadingId === selected.id} />}</div>;
 }

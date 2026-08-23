@@ -1,0 +1,129 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Deeptrack Investor Data Room - AWS-native API and private document storage
+
+Parameters:
+  Auth0Issuer:
+    Type: String
+    Description: Auth0 issuer URL, for example https://tenant.eu.auth0.com
+  Auth0Audience:
+    Type: String
+    Description: Auth0 API audience accepted by the data-room backend
+  DataRoomOrigin:
+    Type: String
+    Description: Approved frontend origin, for example https://dataroom.deeptrack.io
+  DatabaseUrl:
+    Type: String
+    NoEcho: true
+    Description: PostgreSQL connection string. Prefer supplying this through an AWS deployment secret workflow.
+  DataRoomS3BucketName:
+    Type: String
+    Default: ''
+    Description: Optional globally unique bucket name; leave blank to let CloudFormation generate it.
+
+Conditions:
+  HasCustomBucketName: !Not [!Equals [!Ref DataRoomS3BucketName, '']]
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Timeout: 30
+    MemorySize: 1024
+    Architectures: [arm64]
+    Environment:
+      Variables:
+        AUTH0_ISSUER: !Ref Auth0Issuer
+        AUTH0_AUDIENCE: !Ref Auth0Audience
+        DATA_ROOM_ORIGIN: !Ref DataRoomOrigin
+        DATABASE_URL: !Ref DatabaseUrl
+        DATA_ROOM_S3_BUCKET: !Ref DataRoomBucket
+        DATABASE_SSL: 'true'
+        DATA_ROOM_MAX_FILE_BYTES: '26214400'
+
+Resources:
+  DataRoomHttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowOrigins: [!Ref DataRoomOrigin]
+        AllowHeaders: [authorization, content-type]
+        AllowMethods: [GET, POST, OPTIONS]
+        AllowCredentials: true
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 100
+        ThrottlingRateLimit: 50
+
+  DataRoomApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: backend/
+      Handler: dist/handler.handler
+      Runtime: nodejs20.x
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref DataRoomBucket
+      Events:
+        Health:
+          Type: HttpApi
+          Properties: { ApiId: !Ref DataRoomHttpApi, Path: /health, Method: GET }
+        DocumentsGet:
+          Type: HttpApi
+          Properties: { ApiId: !Ref DataRoomHttpApi, Path: /documents, Method: GET }
+        DocumentsPost:
+          Type: HttpApi
+          Properties: { ApiId: !Ref DataRoomHttpApi, Path: /documents, Method: POST }
+        UploadsPost:
+          Type: HttpApi
+          Properties: { ApiId: !Ref DataRoomHttpApi, Path: /uploads, Method: POST }
+        DownloadGet:
+          Type: HttpApi
+          Properties: { ApiId: !Ref DataRoomHttpApi, Path: /documents/{id}/download, Method: GET }
+
+  DataRoomBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !If [HasCustomBucketName, !Ref DataRoomS3BucketName, !Ref AWS::NoValue]
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration: { Status: Enabled }
+      LifecycleConfiguration:
+        Rules:
+          - Id: AbortIncompleteMultipartUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload: { DaysAfterInitiation: 2 }
+      CorsConfiguration:
+        CorsRules:
+          - AllowedOrigins: [!Ref DataRoomOrigin]
+            AllowedMethods: [PUT, GET, HEAD]
+            AllowedHeaders: ['*']
+            MaxAge: 300
+
+  DataRoomBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref DataRoomBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !GetAtt DataRoomBucket.Arn
+              - !Sub '${DataRoomBucket.Arn}/*'
+            Condition: { Bool: { 'aws:SecureTransport': 'false' } }
+
+Outputs:
+  ApiUrl:
+    Description: API Gateway base URL
+    Value: !Sub 'https://${DataRoomHttpApi}.execute-api.${AWS::Region}.amazonaws.com'
+  BucketName:
+    Description: Private S3 bucket name
+    Value: !Ref DataRoomBucket

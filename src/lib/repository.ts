@@ -1,5 +1,11 @@
 import type { DataRoomDocument, DataRoomRepository, NewDocument } from "../types";
 
+let accessTokenProvider: (() => Promise<string>) | undefined;
+
+export function configureAccessTokenProvider(provider?: () => Promise<string>) {
+  accessTokenProvider = provider;
+}
+
 const DATABASE_NAME = "deeptrack-data-room-local";
 const DATABASE_VERSION = 1;
 const DOCUMENT_STORE = "documents";
@@ -93,7 +99,8 @@ export class RemoteDataRoomRepository implements DataRoomRepository {
   constructor(private readonly apiBaseUrl: string) {}
 
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
-    const response = await fetch(`${this.apiBaseUrl.replace(/\/$/, "")}${path}`, { credentials: "include", headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) }, ...init });
+    const token = accessTokenProvider ? await accessTokenProvider() : undefined;
+    const response = await fetch(`${this.apiBaseUrl.replace(/\/$/, "")}${path}`, { credentials: "include", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(init?.headers ?? {}) }, ...init });
     if (!response.ok) {
       const payload = await response.json().catch(() => null) as { error?: string } | null;
       throw new Error(payload?.error ?? `Data-room service returned ${response.status}.`);
