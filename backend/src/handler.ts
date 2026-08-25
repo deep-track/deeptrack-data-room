@@ -100,16 +100,19 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       const body = jsonBody(event) as Record<string, unknown>;
       const title = String(body.title || "").trim(); const category = String(body.category || "").trim(); const source = body.source === "link" ? "link" : "upload";
       const tier = Number(body.tier); if (!title || !category || ![1, 2, 3].includes(tier)) throw new Error("Title, category, and valid clearance tier are required");
-      let storageKey = typeof body.storageKey === "string" ? body.storageKey : undefined;
-      if (source === "upload") {
-        if (!storageKey) throw new Error("Uploaded documents require a storage key");
-        const intent = await query<{ owner_subject: string; expires_at: string; consumed_at: string | null }>("SELECT owner_subject, expires_at, consumed_at FROM data_room_upload_intents WHERE storage_key=$1", [storageKey]);
-        const row = intent.rows[0]; if (!row || row.owner_subject !== auth.subject || row.consumed_at || new Date(row.expires_at) < new Date()) throw new Error("Upload intent is invalid or expired");
-        if (!(await markUploadIntentConsumed(storageKey, auth.subject))) throw new Error("Upload intent is invalid or already consumed");
-      } else {
+      const storageKey = typeof body.storageKey === "string" ? body.storageKey : undefined;
+      if (source === "link") {
         const link = String(body.link || ""); if (!/^https:\/\//i.test(link)) throw new Error("Linked documents require an HTTPS URL");
       }
-      const document = await withTransaction(async () => insertDocument({ id: randomUUID(), title, category, tier, description: typeof body.description === "string" ? body.description : undefined, source, link: typeof body.link === "string" ? body.link : undefined, storageKey, fileName: typeof body.fileName === "string" ? body.fileName : undefined, mimeType: typeof body.mimeType === "string" ? body.mimeType : undefined, sizeBytes: typeof body.sizeBytes === "number" ? body.sizeBytes : undefined, ownerSubject: auth.subject, status: "approved" }));
+      const document = await withTransaction(async (client) => {
+        if (source === "upload") {
+          if (!storageKey) throw new Error("Uploaded documents require a storage key");
+          const intent = await client.query<{ owner_subject: string; expires_at: string; consumed_at: string | null }>("SELECT owner_subject, expires_at, consumed_at FROM data_room_upload_intents WHERE storage_key=$1 FOR UPDATE", [storageKey]);
+          const row = intent.rows[0]; if (!row || row.owner_subject !== auth.subject || row.consumed_at || new Date(row.expires_at) < new Date()) throw new Error("Upload intent is invalid or expired");
+          if (!(await markUploadIntentConsumed(storageKey, auth.subject, client))) throw new Error("Upload intent is invalid or already consumed");
+        }
+        return insertDocument({ id: randomUUID(), title, category, tier, description: typeof body.description === "string" ? body.description : undefined, source, link: typeof body.link === "string" ? body.link : undefined, storageKey, fileName: typeof body.fileName === "string" ? body.fileName : undefined, mimeType: typeof body.mimeType === "string" ? body.mimeType : undefined, sizeBytes: typeof body.sizeBytes === "number" ? body.sizeBytes : undefined, ownerSubject: auth.subject, status: "approved" }, client);
+      });
       await insertAudit({ event: "document_created", actorSubject: auth.subject, actorEmail: auth.email, documentId: document.id, detail: `status=${document.status};tier=${document.tier}`, ...meta, createdAt: new Date().toISOString() });
       return response(201, document);
     }

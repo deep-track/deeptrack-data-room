@@ -47,10 +47,10 @@ export async function getDocument(id: string) {
   return result.rows[0] ? mapDocument(result.rows[0]) : undefined;
 }
 
-export async function insertDocument(input: { id: string; title: string; category: string; tier: number; description?: string; source: string; link?: string; storageKey?: string; fileName?: string; mimeType?: string; sizeBytes?: number; ownerSubject: string; status: DocumentStatus }) {
+export async function insertDocument(input: { id: string; title: string; category: string; tier: number; description?: string; source: string; link?: string; storageKey?: string; fileName?: string; mimeType?: string; sizeBytes?: number; ownerSubject: string; status: DocumentStatus }, executor: { query: PoolClient["query"] } = getPool()) {
   const now = new Date().toISOString();
   const versions = [{ version: "1.0", createdAt: now, note: "Initial filing" }];
-  const result = await query("INSERT INTO data_room_documents (id,title,category,tier,description,source,link,storage_key,file_name,mime_type,size_bytes,owner_subject,status,versions,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15,$15) RETURNING *", [input.id,input.title,input.category,input.tier,input.description ?? null,input.source,input.link ?? null,input.storageKey ?? null,input.fileName ?? null,input.mimeType ?? null,input.sizeBytes ?? null,input.ownerSubject,input.status,JSON.stringify(versions),now]);
+  const result = await executor.query("INSERT INTO data_room_documents (id,title,category,tier,description,source,link,storage_key,file_name,mime_type,size_bytes,owner_subject,status,versions,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15,$15) RETURNING *", [input.id,input.title,input.category,input.tier,input.description ?? null,input.source,input.link ?? null,input.storageKey ?? null,input.fileName ?? null,input.mimeType ?? null,input.sizeBytes ?? null,input.ownerSubject,input.status,JSON.stringify(versions),now]);
   return mapDocument(result.rows[0]);
 }
 
@@ -119,7 +119,7 @@ export async function addDocumentVersion(id: string, note: string, actorSubject:
   return result.rows[0] ? mapDocument(result.rows[0]) : undefined;
 }
 
-export async function markUploadIntentConsumed(storageKey: string, subject: string) {
-  const result = await query("UPDATE data_room_upload_intents SET consumed_at = now() WHERE storage_key = $1 AND owner_subject = $2 AND consumed_at IS NULL AND expires_at > now() RETURNING id", [storageKey, subject]);
+export async function markUploadIntentConsumed(storageKey: string, subject: string, executor: { query: PoolClient["query"] } = getPool()) {
+  const result = await executor.query("UPDATE data_room_upload_intents SET consumed_at = now() WHERE storage_key = $1 AND owner_subject = $2 AND consumed_at IS NULL AND expires_at > now() RETURNING id", [storageKey, subject]);
   return result.rowCount === 1;
 }
