@@ -6,7 +6,7 @@ import { configureAccessTokenProvider } from "./lib/repository";
 import { LoginScreen } from "./components/LoginScreen";
 import { UploadDialog } from "./components/UploadDialog";
 import { dataRoomRepository, formatBytes } from "./lib/repository";
-import type { DataRoomDocument } from "./types";
+import type { AccessStatus, DataRoomDocument } from "./types";
 
 const categories = ["All documents", "Fundraise materials", "Financials", "Technology", "Legal", "Governance"];
 const tierLabel = { 1: "General", 2: "Diligence", 3: "Restricted" } as const;
@@ -30,12 +30,41 @@ export default function App({ auth0 = null }: { auth0?: Auth0Bridge | null }) {
   const [showUpload, setShowUpload] = useState(false);
   const [selected, setSelected] = useState<DataRoomDocument | null>(null);
   const [loading, setLoading] = useState(true);
+  const [accessStatus, setAccessStatus] = useState<AccessStatus | null>(null);
+  const [ndaSubmitting, setNdaSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [view, setView] = useState<View>("documents");
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
 
-  useEffect(() => { dataRoomRepository.listDocuments().then(setDocuments).catch((cause) => setError(cause instanceof Error ? cause.message : "Unable to load local data-room documents.")).finally(() => setLoading(false)); }, []);
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    dataRoomRepository.getAccessStatus()
+      .then((status) => {
+        if (!active) return [];
+        setAccessStatus(status);
+        if (status.role === "investor" && status.grant && !status.grant.ndaAcknowledgedAt) return [];
+        return dataRoomRepository.listDocuments();
+      })
+      .then((records) => { if (active) setDocuments(records); })
+      .catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : "Unable to load data-room documents."); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  async function acknowledgeNda() {
+    const version = accessStatus?.grant?.ndaVersion;
+    if (!version) return;
+    setNdaSubmitting(true); setError("");
+    try {
+      await dataRoomRepository.acknowledgeNda(version);
+      setAccessStatus((current) => current?.grant ? { ...current, grant: { ...current.grant, ndaAcknowledgedAt: new Date().toISOString() } } : current);
+      setLoading(true);
+      setDocuments(await dataRoomRepository.listDocuments());
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to acknowledge the NDA."); }
+    finally { setNdaSubmitting(false); setLoading(false); }
+  }
   const administrator = session ? isAdministrator(session.role) : false;
   const permittedDocuments = useMemo(() => documents.filter((document) => !session || document.tier <= session.clearanceTier), [documents, session]);
   const visibleDocuments = useMemo(() => permittedDocuments.filter((document) => {
@@ -67,7 +96,7 @@ export default function App({ auth0 = null }: { auth0?: Auth0Bridge | null }) {
   if (auth0?.isLoading) return <main className="login-page"><section className="login-card-wrap"><div className="login-card"><p className="eyebrow">Secure entry</p><h2>Checking your session…</h2><p className="login-note">Verifying your Auth0 identity before loading the data room.</p></div></section></main>;
   if (!session) return <LoginScreen onContinue={enter} auth0={auth0} />;
   const role = roleDetails[session.role];
-  return <div className="app-shell"><aside className="sidebar"><div className="brand"><span className="brand-mark" aria-hidden="true">///</span><div><strong>deeptrack</strong><span>Data room</span></div></div><div className="role-card"><p>{role.label}</p><span>{session.displayName}</span><small>{administrator ? "Administrative review" : "Read-only review"}</small></div><nav aria-label="Data room navigation"><p className="nav-caption">Workspace</p><button className={`nav-item ${view === "documents" ? "active" : ""}`} onClick={() => setView("documents")}><LayoutDashboard size={17} /> Documents</button>{administrator && <><button className={`nav-item ${view === "access" ? "active" : ""}`} onClick={() => setView("access")}><UsersRound size={17} /> Access & invitations</button><button className={`nav-item ${view === "governance" ? "active" : ""}`} onClick={() => setView("governance")}><Settings2 size={17} /> Governance & audit</button></>} {view === "documents" && <><p className="nav-caption">Folders</p>{categories.map((category) => <button key={category} className={`nav-item ${activeCategory === category ? "active" : ""}`} onClick={() => setActiveCategory(category)}><FolderClosed size={17} /><span>{category}</span><small>{category === "All documents" ? permittedDocuments.length : permittedDocuments.filter((document) => document.category === category).length}</small></button>)}</>}</nav><div className="sidebar-foot"><ShieldCheck size={17} /><span>Production access requires server-side identity and authorization.</span></div></aside><main><header className="topbar"><div><p className="eyebrow">Investor relations · {role.label}</p><h1>Deeptrack data room</h1></div><div className="topbar-actions"><div className="status"><span></span> Review mode</div>{administrator && <button className="primary-button" onClick={() => setShowUpload(true)}><Plus size={17} /> File document</button>}<button className="session-button" onClick={leave}><LogOut size={16} /> End session</button></div></header><section className="notice"><Info size={18} /><div><strong>{administrator ? "Administrative review mode is active." : "Investor read-only review mode is active."}</strong><p>{administrator ? "Founder and Investor Relations controls are represented for workflow review. Production permissions must be enforced by the data-room API." : "You may view permitted records and download allowed documents. Upload, editing, access changes, and administration are unavailable to investors."}</p></div></section><section className="workspace">{error && <div className="error-banner" role="alert"><span>{error}</span><button type="button" onClick={() => setError("")} aria-label="Dismiss error"><X size={16} /></button></div>}{view === "documents" && <DocumentsView session={session} administrator={administrator} activeCategory={activeCategory} setActiveCategory={setActiveCategory} query={query} setQuery={setQuery} documents={documents} visibleDocuments={visibleDocuments} loading={loading} downloadingId={downloadingId} onUpload={() => setShowUpload(true)} onSelect={setSelected} onDownload={download} />}{view === "access" && administrator && <AccessView role={session.role} onLog={log} />}{view === "governance" && administrator && <GovernanceView activity={activity} />}</section></main>{showUpload && administrator && <UploadDialog repository={dataRoomRepository} onClose={() => setShowUpload(false)} onCreated={(document) => { setDocuments((current) => [document, ...current]); setShowUpload(false); setSelected(document); log("Document filed", `${document.title} · local review record`); }} />}{selected && <DocumentDrawer document={selected} session={session} onClose={() => setSelected(null)} onDownload={download} downloading={downloadingId === selected.id} />}</div>;
+  return <div className="app-shell"><aside className="sidebar"><div className="brand"><span className="brand-mark" aria-hidden="true">///</span><div><strong>deeptrack</strong><span>Data room</span></div></div><div className="role-card"><p>{role.label}</p><span>{session.displayName}</span><small>{administrator ? "Administrative review" : "Read-only review"}</small></div><nav aria-label="Data room navigation"><p className="nav-caption">Workspace</p><button className={`nav-item ${view === "documents" ? "active" : ""}`} onClick={() => setView("documents")}><LayoutDashboard size={17} /> Documents</button>{administrator && <><button className={`nav-item ${view === "access" ? "active" : ""}`} onClick={() => setView("access")}><UsersRound size={17} /> Access & invitations</button><button className={`nav-item ${view === "governance" ? "active" : ""}`} onClick={() => setView("governance")}><Settings2 size={17} /> Governance & audit</button></>} {view === "documents" && <><p className="nav-caption">Folders</p>{categories.map((category) => <button key={category} className={`nav-item ${activeCategory === category ? "active" : ""}`} onClick={() => setActiveCategory(category)}><FolderClosed size={17} /><span>{category}</span><small>{category === "All documents" ? permittedDocuments.length : permittedDocuments.filter((document) => document.category === category).length}</small></button>)}</>}</nav><div className="sidebar-foot"><ShieldCheck size={17} /><span>Production access requires server-side identity and authorization.</span></div></aside><main><header className="topbar"><div><p className="eyebrow">Investor relations · {role.label}</p><h1>Deeptrack data room</h1></div><div className="topbar-actions"><div className="status"><span></span> Review mode</div>{administrator && <button className="primary-button" onClick={() => setShowUpload(true)}><Plus size={17} /> File document</button>}<button className="session-button" onClick={leave}><LogOut size={16} /> End session</button></div></header><section className="notice"><Info size={18} /><div><strong>{administrator ? "Administrative review mode is active." : "Investor read-only review mode is active."}</strong><p>{administrator ? "Founder and Investor Relations controls are represented for workflow review. Production permissions must be enforced by the data-room API." : "You may view permitted records and download allowed documents. Upload, editing, access changes, and administration are unavailable to investors."}</p></div></section><section className="workspace">{error && <div className="error-banner" role="alert"><span>{error}</span><button type="button" onClick={() => setError("")} aria-label="Dismiss error"><X size={16} /></button></div>}{session.role === "investor" && accessStatus?.grant && !accessStatus.grant.ndaAcknowledgedAt && <section className="notice"><LockKeyhole size={18} /><div><strong>NDA acknowledgement required</strong><p>Review the current non-disclosure agreement before accessing permitted data-room documents. Grant expires {formatDate(accessStatus.grant.expiresAt)}.</p><button className="primary-button" onClick={acknowledgeNda} disabled={ndaSubmitting}>{ndaSubmitting ? "Recording acknowledgement…" : `Acknowledge NDA ${accessStatus.grant.ndaVersion}`}</button></div></section>}{view === "documents" && <DocumentsView session={session} administrator={administrator} activeCategory={activeCategory} setActiveCategory={setActiveCategory} query={query} setQuery={setQuery} documents={documents} visibleDocuments={visibleDocuments} loading={loading} downloadingId={downloadingId} onUpload={() => setShowUpload(true)} onSelect={setSelected} onDownload={download} />}{view === "access" && administrator && <AccessView role={session.role} onLog={log} />}{view === "governance" && administrator && <GovernanceView activity={activity} />}</section></main>{showUpload && administrator && <UploadDialog repository={dataRoomRepository} onClose={() => setShowUpload(false)} onCreated={(document) => { setDocuments((current) => [document, ...current]); setShowUpload(false); setSelected(document); log("Document filed", `${document.title} · local review record`); }} />}{selected && <DocumentDrawer document={selected} session={session} onClose={() => setSelected(null)} onDownload={download} downloading={downloadingId === selected.id} />}</div>;
 }
 
 type DocumentsViewProps = { session: ReviewSession; administrator: boolean; activeCategory: string; setActiveCategory: (value: string) => void; query: string; setQuery: (value: string) => void; documents: DataRoomDocument[]; visibleDocuments: DataRoomDocument[]; loading: boolean; downloadingId: string | null; onUpload: () => void; onSelect: (document: DataRoomDocument) => void; onDownload: (document: DataRoomDocument) => void };

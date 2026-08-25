@@ -56,6 +56,14 @@ function recordFrom(input: NewDocument, overrides: Partial<DataRoomDocument> = {
 }
 
 export class LocalDataRoomRepository implements DataRoomRepository {
+  async getAccessStatus() {
+    return { role: "founder" as const, clearanceTier: 3 as const };
+  }
+
+  async acknowledgeNda(version: string) {
+    return { acknowledged: true, version };
+  }
+
   async listDocuments(): Promise<DataRoomDocument[]> {
     const database = await openDatabase();
     const transaction = database.transaction(DOCUMENT_STORE, "readonly");
@@ -109,6 +117,12 @@ export class RemoteDataRoomRepository implements DataRoomRepository {
   }
 
   listDocuments() { return this.request<DataRoomDocument[]>("/documents"); }
+
+  getAccessStatus() { return this.request<import("../types").AccessStatus>("/access/status"); }
+
+  acknowledgeNda(version: string) {
+    return this.request<{ acknowledged: boolean; version: string }>("/access/nda", { method: "POST", body: JSON.stringify({ version }) });
+  }
 
   async createUploadedDocument(document: NewDocument, file: File): Promise<DataRoomDocument> {
     const intent = await this.request<UploadIntent>("/uploads", { method: "POST", body: JSON.stringify({ fileName: file.name, contentType: file.type || "application/octet-stream", contentLength: file.size, category: document.category, tier: document.tier }) });
