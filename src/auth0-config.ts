@@ -14,11 +14,17 @@ export type Auth0Bridge = {
   getAccessTokenSilently: (options?: { authorizationParams?: { audience?: string } }) => Promise<string>;
 };
 
+function optionalAuth0Organization(value: unknown) {
+  const organization = typeof value === "string" ? value.trim() : "";
+  if (!organization || organization.startsWith("replace-with-") || organization.startsWith("<")) return undefined;
+  return organization;
+}
+
 export const auth0Config = {
   domain: import.meta.env.VITE_AUTH0_DOMAIN?.trim() || "",
   clientId: import.meta.env.VITE_AUTH0_CLIENT_ID?.trim() || "",
   audience: import.meta.env.VITE_AUTH0_AUDIENCE?.trim() || "",
-  organization: import.meta.env.VITE_AUTH0_ORGANIZATION_ID?.trim() || undefined,
+  organization: optionalAuth0Organization(import.meta.env.VITE_AUTH0_ORGANIZATION_ID),
 };
 
 export const isAuth0Configured = Boolean(auth0Config.domain && auth0Config.clientId && auth0Config.audience);
