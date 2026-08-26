@@ -25,7 +25,10 @@ function resolveRole(payload: JWTPayload): Role {
   if (claims.some((v) => ["founder", "owner", "head"].includes(v))) return "founder";
   if (claims.some((v) => ["investorRelations", "investor_relations", "investor-relations", "admin"].includes(v))) return "investorRelations";
   if (claims.some((v) => ["investor", "user"].includes(v))) return "investor";
-  throw new Error("Authenticated identity has no approved data-room role");
+  // A valid authenticated identity without an elevated claim is an investor.
+  // This preserves open Google sign-in while keeping all document access and
+  // clearance decisions behind server-side grants and tier checks.
+  return "investor";
 }
 
 export async function requireAuth(event: APIGatewayProxyEventV2, minimum: "any" | "admin" = "any"): Promise<AuthContext> {

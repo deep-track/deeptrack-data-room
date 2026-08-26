@@ -31,6 +31,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 
     if (path === "/access/status" && method === "GET") {
       const grant = auth.role === "investor" ? await getActiveGrant(auth.subject) : undefined;
+      if (auth.role === "investor" && !grant) throw new Error("No active data-room grant is assigned");
       return response(200, { role: auth.role, clearanceTier: grant?.clearanceTier ?? auth.clearanceTier, grant: grant ? { investorEmail: grant.investorEmail, firmName: grant.firmName, clearanceTier: grant.clearanceTier, ndaVersion: grant.ndaVersion, ndaAcknowledgedAt: grant.ndaAcknowledgedAt, expiresAt: grant.expiresAt } : undefined });
     }
 
