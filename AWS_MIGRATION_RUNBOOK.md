@@ -105,4 +105,6 @@ After deployment, set the frontend’s `VITE_DATA_ROOM_API_BASE_URL` to the API 
 
 ## Current implementation boundary
 
-The AWS backend foundation is now present in the repository, but it is not yet a completed production cutover. The remaining work includes connecting the frontend to a real Auth0 browser flow, implementing investor invitation and NDA endpoints, enforcing database-backed grants in list/download handlers, adding document publication/version-management endpoints, configuring the Lambda’s database networking, deploying the SAM stack in the correct AWS account and region, and completing live acceptance tests with non-sensitive test documents.
+The AWS software implementation is now present in the repository, including the real Auth0 browser integration, authenticated access-status and NDA acknowledgement endpoints, database-backed grant checks for document listing and downloads, upload-intent consumption, document status/version endpoints, and audit retrieval. The frontend uses the remote API adapter whenever `VITE_DATA_ROOM_API_BASE_URL` is configured and presents the NDA acknowledgement step before investor document access.
+
+The remaining work is the production cutover and DevOps execution: configure the AWS account and region, provision PostgreSQL and networking, deploy the SAM stack, configure Secrets Manager and IAM, deploy the frontend artifact to S3/CloudFront, set the API Gateway URL in the production frontend build, verify ACM/TLS and DNS, configure CloudWatch, and complete live acceptance tests with non-sensitive test documents.
