@@ -1,3 +1,5 @@
+import { resolveDataRoomRole } from "./auth0-roles";
+
 export type Auth0User = {
   sub?: string;
   name?: string;
@@ -30,10 +32,14 @@ export const auth0Config = {
 export const isAuth0Configured = Boolean(auth0Config.domain && auth0Config.clientId && auth0Config.audience);
 
 const roleClaim = import.meta.env.VITE_AUTH0_ROLE_CLAIM?.trim() || "https://deeptrack.io/roles";
-
 export function sessionFromAuth0(user: Auth0User) {
   const raw = user[roleClaim] ?? user["https://deeptrack.io/role"];
-  const roles = Array.isArray(raw) ? raw.filter((item): item is string => typeof item === "string") : typeof raw === "string" ? [raw] : [];
-  const role = roles.some((value) => ["founder", "owner", "head"].includes(value)) ? "founder" : roles.some((value) => ["investorRelations", "investor_relations", "investor-relations", "admin"].includes(value)) ? "investorRelations" : "investor";
-  return { role, displayName: user.name || user.email || "Authenticated user", email: user.email || "", clearanceTier: role === "investor" ? 1 : 3 } as const;
+  const resolved = resolveDataRoomRole({
+    email: user.email,
+    roles: raw,
+  }, {
+    founderEmails: import.meta.env.VITE_AUTH0_FOUNDER_EMAILS,
+    investorRelationsEmails: import.meta.env.VITE_AUTH0_INVESTOR_RELATIONS_EMAILS,
+  });
+  return { role: resolved.role, displayName: user.name || user.email || "Authenticated user", email: user.email || "", clearanceTier: resolved.clearanceTier } as const;
 }
