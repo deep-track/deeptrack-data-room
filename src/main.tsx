@@ -20,9 +20,11 @@ function Root() {
       authorizationParams={{
         redirect_uri: window.location.origin,
         audience: auth0Config.audience,
+        scope: "openid profile email offline_access",
         ...(auth0Config.organization ? { organization: auth0Config.organization } : {}),
       }}
       useRefreshTokens
+      useRefreshTokensFallback
       cacheLocation="memory"
     >
       <AuthenticatedApp />
