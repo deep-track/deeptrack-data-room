@@ -7,3 +7,4 @@ dist/
 !.env.example
 *.tsbuildinfo
 smoke-test-document.txt
+.aws-sam/
