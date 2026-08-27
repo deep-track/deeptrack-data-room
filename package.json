@@ -12,7 +12,8 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 0.0.0.0",
     "test:roles": "tsx --test tests/auth0-roles.integration.ts",
-    "test": "npm run test:roles"
+    "test:bootstrap": "node --test tests/auth0-bootstrap.integration.js",
+    "test": "npm run test:roles && npm run test:bootstrap"
   },
   "dependencies": {
     "@auth0/auth0-react": "^2.24.1",

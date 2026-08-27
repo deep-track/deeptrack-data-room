@@ -11,7 +11,13 @@ function AuthenticatedApp() {
   return <App auth0={auth0} />;
 }
 
+function AuthConfigurationError() {
+  return <main className="login-page"><section className="login-card-wrap"><div className="login-card"><p className="eyebrow">Secure entry unavailable</p><h1>Authentication is not configured</h1><p className="login-note">This data room is fail-closed. An Auth0 deployment configuration is required before any identity can access the review environment.</p><p className="login-footnote">Contact Deeptrack Investor Relations or the deployment administrator.</p></div></section></main>;
+}
+
 function Root() {
+  const reviewPreviewEnabled = import.meta.env.DEV && import.meta.env.VITE_ENABLE_REVIEW_PREVIEW === "true";
+  if (!isAuth0Configured && !reviewPreviewEnabled) return <AuthConfigurationError />;
   if (!isAuth0Configured) return <App />;
   return (
     <Auth0Provider
