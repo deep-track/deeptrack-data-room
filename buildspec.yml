@@ -34,11 +34,11 @@ phases:
         PYEOF
       - |
         DB_SECRET=$(aws secretsmanager get-secret-value --secret-id deeptrack/postgres/master --region eu-west-1 --query 'SecretString' --output text)
-        DB_URL=$(echo "$DB_SECRET" | python3 /tmp/build_db_url.py)
-        echo "DB_URL=$DB_URL" >> $CODEBUILD_ENV_FILE
+        export DB_URL=$(echo "$DB_SECRET" | python3 /tmp/build_db_url.py)
+        echo "DB_URL set successfully"
       - |
-        API_URL=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --region eu-west-1 --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' --output text)
-        echo "API_URL=$API_URL" >> $CODEBUILD_ENV_FILE
+        export API_URL=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --region eu-west-1 --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' --output text)
+        echo "API_URL=$API_URL"
 
   build:
     commands:
