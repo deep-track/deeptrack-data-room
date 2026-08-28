@@ -77,7 +77,7 @@ Resources:
           Properties: { ApiId: !Ref DataRoomHttpApi, Path: /uploads, Method: POST }
         DownloadGet:
           Type: HttpApi
-          Properties: { ApiId: !Ref DataRoomHttpApi, Path: /documents/{id}/download, Method: GET }
+          Properties: { ApiId: !Ref DataRoomHttpApi, Path: "/documents/{id}/download", Method: GET }
 
   DataRoomBucket:
     Type: AWS::S3::Bucket
