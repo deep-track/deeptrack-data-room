@@ -26,48 +26,28 @@ phases:
     commands:
       - echo "Fetching secrets and stack outputs..."
       - |
-        DB_SECRET=$(aws secretsmanager get-secret-value \
-          --secret-id deeptrack/postgres/master \
-          --region eu-west-1 \
-          --query 'SecretString' --output text)
-        DB_URL=$(echo "$DB_SECRET" | python3 -c "
-import sys, json, urllib.parse
-d = json.load(sys.stdin)
-pw = urllib.parse.quote(d['password'], safe='')
-print(f'postgresql://{d[\"username\"]}:{pw}@{d[\"host\"]}:{d[\"port\"]}/{d[\"dbname\"]}?sslmode=require')
-")
+        cat > /tmp/build_db_url.py << 'PYEOF'
+        import sys, json, urllib.parse
+        d = json.load(sys.stdin)
+        pw = urllib.parse.quote(d['password'], safe='')
+        print(f"postgresql://{d['username']}:{pw}@{d['host']}:{d['port']}/{d['dbname']}?sslmode=require")
+        PYEOF
+      - |
+        DB_SECRET=$(aws secretsmanager get-secret-value --secret-id deeptrack/postgres/master --region eu-west-1 --query 'SecretString' --output text)
+        DB_URL=$(echo "$DB_SECRET" | python3 /tmp/build_db_url.py)
         echo "DB_URL=$DB_URL" >> $CODEBUILD_ENV_FILE
       - |
-        API_URL=$(aws cloudformation describe-stacks \
-          --stack-name $STACK_NAME \
-          --region eu-west-1 \
-          --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' --output text)
+        API_URL=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --region eu-west-1 --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' --output text)
         echo "API_URL=$API_URL" >> $CODEBUILD_ENV_FILE
 
   build:
     commands:
       - echo "Building backend..."
-      - cd backend
-      - npm ci
-      - npm run build
-      - cd ..
+      - cd backend && npm ci && npm run build && cd ..
       - echo "SAM build..."
       - sam build --template-file template.yaml
       - echo "SAM deploy..."
-      - sam deploy \
-          --template-file .aws-sam/build/template.yaml \
-          --stack-name $STACK_NAME \
-          --region eu-west-1 \
-          --capabilities CAPABILITY_IAM \
-          --resolve-s3 \
-          --no-confirm-changeset \
-          --no-fail-on-empty-changeset \
-          --parameter-overrides \
-            "Auth0Issuer=$AUTH0_ISSUER" \
-            "Auth0Audience=$AUTH0_AUDIENCE" \
-            "DataRoomOrigin=$DATA_ROOM_ORIGIN" \
-            "DatabaseUrl=$DB_URL" \
-            "LambdaSecurityGroupId=$LAMBDA_SG"
+      - sam deploy --template-file .aws-sam/build/template.yaml --stack-name $STACK_NAME --region eu-west-1 --capabilities CAPABILITY_IAM --resolve-s3 --no-confirm-changeset --no-fail-on-empty-changeset --parameter-overrides "Auth0Issuer=$AUTH0_ISSUER" "Auth0Audience=$AUTH0_AUDIENCE" "DataRoomOrigin=$DATA_ROOM_ORIGIN" "DatabaseUrl=$DB_URL" "LambdaSecurityGroupId=$LAMBDA_SG"
       - echo "Building frontend..."
       - |
         cat > .env.production <<ENV
