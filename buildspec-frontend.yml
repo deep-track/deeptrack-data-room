@@ -5,7 +5,6 @@ env:
     S3_BUCKET: investors-deeptrack-io-frontend-eu-west-1
     CF_DIST_ID: E3JP1T0XSJ1O0M
     AWS_REGION: eu-west-1
-    NODE_ENV: production
     VITE_AUTH0_DOMAIN: dev-08kwsss3wr77v0k0.us.auth0.com
     VITE_AUTH0_CLIENT_ID: 2nsfWPfcCPkxA3N7Me4aUwjlSsDeoFbM
     VITE_AUTH0_AUDIENCE: https://api.deeptrack.io/data-room
@@ -21,7 +20,6 @@ phases:
 
   build:
     commands:
-      - echo "Building with NODE_ENV=$NODE_ENV"
       - npm run build
       - ls -la dist/
 
