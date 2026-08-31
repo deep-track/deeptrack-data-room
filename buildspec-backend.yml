@@ -1,0 +1,47 @@
+version: 0.2
+
+env:
+  variables:
+    STACK_NAME: deeptrack-investor-data-room
+    AWS_REGION: eu-west-1
+    AUTH0_ISSUER: https://dev-08kwsss3wr77v0k0.us.auth0.com/
+    AUTH0_AUDIENCE: https://api.deeptrack.io/data-room
+    DATA_ROOM_ORIGIN: https://investors.deeptrack.io
+    LAMBDA_SG_ID: sg-003d2ebd85c1a6e9b
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 20
+    commands:
+      - wget -q https://github.com/aws/aws-sam-cli/releases/latest/download/aws-sam-cli-linux-x86_64.zip
+      - unzip -q aws-sam-cli-linux-x86_64.zip -d sam-installation
+      - ./sam-installation/install --update
+      - rm -rf sam-installation aws-sam-cli-linux-x86_64.zip
+
+  pre_build:
+    commands:
+      - export DATABASE_URL=$(aws secretsmanager get-secret-value --secret-id gotham/production/database-url --query SecretString --output text --region $AWS_REGION)
+      - cd backend && npm ci && npm run build && cd ..
+
+  build:
+    commands:
+      - sam build --template-file template.yaml
+
+  post_build:
+    commands:
+      - |
+        sam deploy \
+          --template-file .aws-sam/build/template.yaml \
+          --stack-name $STACK_NAME \
+          --region $AWS_REGION \
+          --capabilities CAPABILITY_IAM \
+          --resolve-s3 \
+          --no-confirm-changeset \
+          --no-fail-on-empty-changeset \
+          --parameter-overrides \
+            "Auth0Issuer=$AUTH0_ISSUER" \
+            "Auth0Audience=$AUTH0_AUDIENCE" \
+            "DataRoomOrigin=$DATA_ROOM_ORIGIN" \
+            "DatabaseUrl=$DATABASE_URL" \
+            "LambdaSecurityGroupId=$LAMBDA_SG_ID"
