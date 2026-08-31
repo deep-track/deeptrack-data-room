@@ -21,10 +21,17 @@ phases:
 
   pre_build:
     commands:
-      - export DATABASE_URL=$(aws secretsmanager get-secret-value --secret-id deeptrack/postgres/master --query SecretString --output text --region $AWS_REGION)
       - |
-        if [ -z "$DATABASE_URL" ]; then
-          echo "ERROR: DATABASE_URL is empty. Check the secret name and permissions."
+        SECRET=$(aws secretsmanager get-secret-value --secret-id deeptrack/postgres/master --query SecretString --output text --region $AWS_REGION)
+        DB_USER=$(echo $SECRET | python3 -c "import sys,json; print(json.load(sys.stdin)['username'])")
+        DB_PASS=$(echo $SECRET | python3 -c "import sys,json; print(json.load(sys.stdin)['password'])")
+        DB_HOST=$(echo $SECRET | python3 -c "import sys,json; print(json.load(sys.stdin)['host'])")
+        DB_PORT=$(echo $SECRET | python3 -c "import sys,json; print(json.load(sys.stdin)['port'])")
+        DB_NAME=$(echo $SECRET | python3 -c "import sys,json; print(json.load(sys.stdin)['dbname'])")
+        export DATABASE_URL="postgresql://${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=require"
+        echo "Database URL constructed (password hidden)"
+        if [ -z "$DATABASE_URL" ] || [ "$DATABASE_URL" = "postgresql://:@:/?sslmode=require" ]; then
+          echo "ERROR: DATABASE_URL is empty or malformed."
           exit 1
         fi
       - cd backend && npm ci && npm run build && cd ..
