@@ -21,7 +21,12 @@ phases:
 
   pre_build:
     commands:
-      - export DATABASE_URL=$(aws secretsmanager get-secret-value --secret-id gotham/production/database-url --query SecretString --output text --region $AWS_REGION)
+      - export DATABASE_URL=$(aws secretsmanager get-secret-value --secret-id deeptrack/postgres/master --query SecretString --output text --region $AWS_REGION)
+      - |
+        if [ -z "$DATABASE_URL" ]; then
+          echo "ERROR: DATABASE_URL is empty. Check the secret name and permissions."
+          exit 1
+        fi
       - cd backend && npm ci && npm run build && cd ..
 
   build:
