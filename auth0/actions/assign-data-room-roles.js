@@ -20,4 +20,5 @@ exports.onExecutePostLogin = async (event, api) => {
   const claim = "https://deeptrack.io/roles";
   api.idToken.setCustomClaim(claim, roles);
   api.accessToken.setCustomClaim(claim, roles);
+  if (verified) api.accessToken.setCustomClaim("https://deeptrack.io/verified_email", email);
 };

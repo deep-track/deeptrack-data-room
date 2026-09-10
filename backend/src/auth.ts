@@ -20,11 +20,21 @@ function values(payload: JWTPayload, claim: string) {
   return typeof value === "string" ? [value] : [];
 }
 
-function resolveRole(payload: JWTPayload): Role {
-  const claims = [...values(payload, roleClaim()), ...values(payload, "https://deeptrack.io/role")];
-  if (claims.some((v) => ["founder", "owner", "head"].includes(v))) return "founder";
-  if (claims.some((v) => ["investorRelations", "investor_relations", "investor-relations", "admin"].includes(v))) return "investorRelations";
-  if (claims.some((v) => ["investor", "user"].includes(v))) return "investor";
+export function resolveRole(payload: JWTPayload): Role {
+  const claims = [...values(payload, roleClaim()), ...values(payload, "https://deeptrack.io/role")]
+    .map((value) => value.trim().toLowerCase());
+  const verifiedEmail = payload.email_verified === true && typeof payload.email === "string"
+    ? payload.email.trim().toLowerCase()
+    : typeof payload["https://deeptrack.io/verified_email"] === "string"
+      ? payload["https://deeptrack.io/verified_email"].trim().toLowerCase()
+      : "";
+
+  // Keep this fallback aligned with the deployed Auth0 Post-Login Action. The
+  // email is read from the verified JWT claim, never from browser input, so a
+  // stale/misconfigured role claim cannot lock an approved administrator out.
+  if (verifiedEmail === "bryan@deeptrack.io" || claims.some((value) => ["founder", "owner", "head"].includes(value))) return "founder";
+  if (verifiedEmail === "ygachara@deeptrack.io" || claims.some((value) => ["investorrelations", "investor_relations", "investor-relations", "admin"].includes(value))) return "investorRelations";
+  if (claims.some((value) => ["investor", "user"].includes(value))) return "investor";
   // A valid authenticated identity without an elevated claim is an investor.
   // This preserves open Google sign-in while keeping all document access and
   // clearance decisions behind server-side grants and tier checks.
