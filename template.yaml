@@ -20,6 +20,14 @@ Parameters:
     Type: String
     Default: ''
     Description: Optional globally unique bucket name; leave blank to let CloudFormation generate it.
+  LambdaSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Default: sg-003d2ebd85c1a6e9b
+    Description: Security group for the API Lambda (deeptrack-data-room-lambda); the database only accepts 5432 from this group.
+  PrivateSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Default: subnet-0ef55fe8d1f2bfb37,subnet-0747ba5733e95bb53
+    Description: Private subnets in deeptrack-vpc (routed through the NAT gateway) so the Lambda can reach the private Postgres and Auth0.
 
 Conditions:
   HasCustomBucketName: !Not [!Equals [!Ref DataRoomS3BucketName, '']]
@@ -59,6 +67,11 @@ Resources:
       CodeUri: backend/
       Handler: dist/handler.handler
       Runtime: nodejs20.x
+      # The database is private (deeptrack-vpc), so the Lambda must run inside the VPC.
+      # SAM adds AWSLambdaVPCAccessExecutionRole to the function role automatically.
+      VpcConfig:
+        SecurityGroupIds: [!Ref LambdaSecurityGroupId]
+        SubnetIds: !Ref PrivateSubnetIds
       Policies:
         - S3CrudPolicy:
             BucketName: !Ref DataRoomBucket
