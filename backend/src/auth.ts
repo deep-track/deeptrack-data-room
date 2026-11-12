@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from "jose";
 import type { APIGatewayProxyEventV2 } from "aws-lambda";
 import type { AuthContext, ClearanceTier, Role } from "./types.js";
@@ -41,18 +42,44 @@ export function resolveRole(payload: JWTPayload): Role {
   return "investor";
 }
 
+// When the Auth0 Post-Login Action has not added role or verified-email claims
+// to the access token, ask Auth0 who the token belongs to. /userinfo only
+// answers for a valid token and its email_verified flag comes from Auth0, so
+// this cannot be spoofed by the browser. Results are cached per token.
+const userinfoCache = new Map<string, { expires: number; payload: JWTPayload }>();
+async function verifiedEmailFromAuth0(token: string, tokenExpiry?: number): Promise<JWTPayload> {
+  const key = createHash("sha256").update(token).digest("hex");
+  const now = Date.now();
+  const cached = userinfoCache.get(key);
+  if (cached && cached.expires > now) return cached.payload;
+  try {
+    const response = await fetch(`${issuer()}/userinfo`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(4000) });
+    if (!response.ok) return {};
+    const info = await response.json() as { email?: unknown; email_verified?: unknown };
+    const payload: JWTPayload = info.email_verified === true && typeof info.email === "string" ? { email: info.email, email_verified: true } : {};
+    if (userinfoCache.size > 500) userinfoCache.clear();
+    userinfoCache.set(key, { payload, expires: Math.min(now + 10 * 60 * 1000, (tokenExpiry ?? 0) * 1000 || now + 60 * 1000) });
+    return payload;
+  } catch {
+    return {};
+  }
+}
+
 export async function requireAuth(event: APIGatewayProxyEventV2, minimum: "any" | "admin" = "any"): Promise<AuthContext> {
   const raw = event.headers.authorization || event.headers.Authorization;
   if (!raw?.startsWith("Bearer ")) throw new Error("Authentication required");
   const token = raw.slice(7).trim();
   const { payload } = await jwtVerify(token, jwks(), { issuer: `${issuer()}/`, audience: audience() });
   if (!payload.sub) throw new Error("Authenticated identity has no subject");
-  const role = resolveRole(payload);
+  let role = resolveRole(payload);
+  let verified: JWTPayload = {};
+  // The token alone says "investor": confirm with Auth0 before settling on that.
+  if (role === "investor") { verified = await verifiedEmailFromAuth0(token, payload.exp); role = resolveRole({ ...payload, ...verified }); }
   if (minimum === "admin" && role === "investor") throw new Error("Administrator role required");
   const clearanceTier: ClearanceTier = role === "investor" ? 1 : 3;
   return {
     subject: payload.sub,
-    email: typeof payload.email === "string" ? payload.email : undefined,
+    email: typeof payload.email === "string" ? payload.email : typeof verified.email === "string" ? verified.email : typeof payload["https://deeptrack.io/verified_email"] === "string" ? payload["https://deeptrack.io/verified_email"] as string : undefined,
     name: typeof payload.name === "string" ? payload.name : undefined,
     role,
     clearanceTier,
