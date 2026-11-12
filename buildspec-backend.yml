@@ -24,14 +24,11 @@ phases:
     commands:
       - |
         SECRET=$(aws secretsmanager get-secret-value --secret-id deeptrack/postgres/master --query SecretString --output text --region $AWS_REGION)
-        DB_USER=$(echo $SECRET | python3 -c "import sys,json; print(json.load(sys.stdin)['username'])")
-        DB_PASS=$(echo $SECRET | python3 -c "import sys,json; print(json.load(sys.stdin)['password'])")
-        DB_HOST=$(echo $SECRET | python3 -c "import sys,json; print(json.load(sys.stdin)['host'])")
-        DB_PORT=$(echo $SECRET | python3 -c "import sys,json; print(json.load(sys.stdin)['port'])")
-        DB_NAME=$(echo $SECRET | python3 -c "import sys,json; print(json.load(sys.stdin)['dbname'])")
-        export DATABASE_URL="postgresql://${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=require"
+        # URL-encode the credentials: the password contains characters that are not valid in a URL.
+        # TLS is configured in backend/src/db.ts, so no sslmode parameter here.
+        export DATABASE_URL=$(echo "$SECRET" | python3 -c "import sys,json,urllib.parse as u; d=json.load(sys.stdin); print('postgresql://%s:%s@%s:%s/%s' % (u.quote(d['username'],safe=''), u.quote(d['password'],safe=''), d['host'], d['port'], d['dbname']))")
         echo "Database URL constructed (password hidden)"
-        if [ -z "$DATABASE_URL" ] || [ "$DATABASE_URL" = "postgresql://:@:/?sslmode=require" ]; then
+        if [ -z "$DATABASE_URL" ] || [ "$DATABASE_URL" = "postgresql://:@:/" ]; then
           echo "ERROR: DATABASE_URL is empty or malformed."
           exit 1
         fi
