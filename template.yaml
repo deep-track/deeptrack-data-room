@@ -91,6 +91,31 @@ Resources:
         DownloadGet:
           Type: HttpApi
           Properties: { ApiId: !Ref DataRoomHttpApi, Path: "/documents/{id}/download", Method: GET }
+        # Routes the handler already serves but were never exposed.
+        AccessStatusGet:
+          Type: HttpApi
+          Properties: { ApiId: !Ref DataRoomHttpApi, Path: /access/status, Method: GET }
+        AccessNdaPost:
+          Type: HttpApi
+          Properties: { ApiId: !Ref DataRoomHttpApi, Path: /access/nda, Method: POST }
+        AccessGrantsGet:
+          Type: HttpApi
+          Properties: { ApiId: !Ref DataRoomHttpApi, Path: /access/grants, Method: GET }
+        AccessGrantsPost:
+          Type: HttpApi
+          Properties: { ApiId: !Ref DataRoomHttpApi, Path: /access/grants, Method: POST }
+        AccessGrantRevokePost:
+          Type: HttpApi
+          Properties: { ApiId: !Ref DataRoomHttpApi, Path: "/access/grants/{id}/revoke", Method: POST }
+        AuditGet:
+          Type: HttpApi
+          Properties: { ApiId: !Ref DataRoomHttpApi, Path: /audit, Method: GET }
+        DocumentStatusPost:
+          Type: HttpApi
+          Properties: { ApiId: !Ref DataRoomHttpApi, Path: "/documents/{id}/status", Method: POST }
+        DocumentVersionsPost:
+          Type: HttpApi
+          Properties: { ApiId: !Ref DataRoomHttpApi, Path: "/documents/{id}/versions", Method: POST }
         # Private investor pipeline (admin-only, enforced in the handler).
         InvestorsGet:
           Type: HttpApi
