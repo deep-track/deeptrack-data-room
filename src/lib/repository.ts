@@ -140,6 +140,18 @@ export class RemoteDataRoomRepository implements DataRoomRepository {
 }
 
 const apiBaseUrl = import.meta.env.VITE_DATA_ROOM_API_BASE_URL?.trim();
+
+/** Authenticated JSON request to the data-room API (used by admin-only features). */
+export async function authorizedRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  if (!apiBaseUrl) throw new Error("The data-room API is not configured in this environment.");
+  const token = accessTokenProvider ? await accessTokenProvider() : undefined;
+  const response = await fetch(`${apiBaseUrl.replace(/\/$/, "")}${path}`, { ...init, headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(init?.headers ?? {}) } });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null) as { error?: string } | null;
+    throw new Error(payload?.error ?? `Data-room service returned ${response.status}.`);
+  }
+  return response.json() as Promise<T>;
+}
 export const dataRoomRepository: DataRoomRepository = apiBaseUrl ? new RemoteDataRoomRepository(apiBaseUrl) : new LocalDataRoomRepository();
 
 export function formatBytes(bytes?: number) {

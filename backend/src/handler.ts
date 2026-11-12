@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { requireAuth } from "./auth.js";
 import { acknowledgeNda, addDocumentVersion, getActiveGrant, getDocument, insertAudit, insertDocument, listAccessGrants, listApprovedDocuments, listAuditEvents, markUploadIntentConsumed, query, revokeAccessGrant, updateDocumentStatus, upsertAccessGrant, withTransaction } from "./db.js";
 import { createDownloadUrl, createUploadUrl, validateUpload } from "./storage.js";
+import { addActivity, createInvestor, getInvestor, importInvestors, InvestorInputError, listInvestors, updateInvestor } from "./investors.js";
 
 const headers = {
   "content-type": "application/json",
@@ -15,7 +16,7 @@ const headers = {
 function response(statusCode: number, body: unknown): APIGatewayProxyResultV2 { return { statusCode, headers, body: JSON.stringify(body) }; }
 function jsonBody(event: APIGatewayProxyEventV2) { try { return event.body ? JSON.parse(event.isBase64Encoded ? Buffer.from(event.body, "base64").toString("utf8") : event.body) : {}; } catch { throw new Error("Request body must be valid JSON"); } }
 function clientMeta(event: APIGatewayProxyEventV2) { return { ip: event.requestContext.http.sourceIp, userAgent: event.headers["user-agent"] || event.headers["User-Agent"] }; }
-function errorResponse(error: unknown) { const message = error instanceof Error ? error.message : "Request failed"; const auth = /Authentication|required|role|Authenticated|forbidden|NDA|grant|clearance|expired|revoked/i.test(message); return response(auth ? 403 : 500, { error: auth ? message : "Data-room service unavailable" }); }
+function errorResponse(error: unknown) { if (error instanceof InvestorInputError) return response(400, { error: error.message }); const message = error instanceof Error ? error.message : "Request failed"; const auth = /Authentication|required|role|Authenticated|forbidden|NDA|grant|clearance|expired|revoked/i.test(message); return response(auth ? 403 : 500, { error: auth ? message : "Data-room service unavailable" }); }
 function idFrom(path: string, pattern: RegExp) { const match = path.match(pattern); return match?.[1]; }
 
 export async function handler(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> {
@@ -25,7 +26,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     if (method === "OPTIONS") return { statusCode: 204, headers: { ...headers, "access-control-allow-origin": process.env.DATA_ROOM_ORIGIN || "", "access-control-allow-credentials": "true", "access-control-allow-headers": "content-type,authorization", "access-control-allow-methods": "GET,POST,OPTIONS" }, body: "" };
     if (path === "/health" && method === "GET") return response(200, { ok: true, service: "deeptrack-data-room-api" });
 
-    const adminRoute = (method === "POST" && (path === "/uploads" || path === "/documents" || path === "/access/grants")) || (method === "GET" && (path === "/access/grants" || path === "/audit")) || (method === "POST" && /^\/access\/grants\/[^/]+\/revoke$/.test(path)) || (method === "POST" && /^\/documents\/[^/]+\/(status|versions)$/.test(path));
+    const adminRoute = (method === "POST" && (path === "/uploads" || path === "/documents" || path === "/access/grants")) || (method === "GET" && (path === "/access/grants" || path === "/audit")) || (method === "POST" && /^\/access\/grants\/[^/]+\/revoke$/.test(path)) || (method === "POST" && /^\/documents\/[^/]+\/(status|versions)$/.test(path)) || path === "/investors" || path.startsWith("/investors/");
     const auth = await requireAuth(event, adminRoute ? "admin" : "any");
     const meta = clientMeta(event);
 
@@ -137,6 +138,36 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       if (!document) return response(404, { error: "Document not found" });
       await insertAudit({ event: "document_version_added", actorSubject: auth.subject, actorEmail: auth.email, documentId: versionId, detail: note, ...meta, createdAt: new Date().toISOString() });
       return response(200, document);
+    }
+
+    // Private investor pipeline: Founder and Investor Relations only (adminRoute above).
+    if (path === "/investors" && method === "GET") return response(200, await listInvestors());
+    if (path === "/investors" && method === "POST") {
+      const investor = await createInvestor(jsonBody(event) as Record<string, unknown>, auth);
+      await insertAudit({ event: "investor_created", actorSubject: auth.subject, actorEmail: auth.email, detail: `investor=${investor.ref}`, ...meta, createdAt: new Date().toISOString() });
+      return response(201, investor);
+    }
+    if (path === "/investors/import" && method === "POST") {
+      const result = await importInvestors(jsonBody(event) as Record<string, unknown>, auth);
+      await insertAudit({ event: "investors_imported", actorSubject: auth.subject, actorEmail: auth.email, detail: `created=${result.created};skipped=${result.skipped}`, ...meta, createdAt: new Date().toISOString() });
+      return response(200, result);
+    }
+    const investorActivityId = idFrom(path, /^\/investors\/([^/]+)\/activity$/);
+    if (investorActivityId && method === "POST") {
+      if (!(await addActivity(investorActivityId, jsonBody(event) as Record<string, unknown>, auth))) return response(404, { error: "Investor not found" });
+      await insertAudit({ event: "investor_activity_logged", actorSubject: auth.subject, actorEmail: auth.email, detail: `investor=${investorActivityId}`, ...meta, createdAt: new Date().toISOString() });
+      return response(201, await getInvestor(investorActivityId));
+    }
+    const investorId = idFrom(path, /^\/investors\/([^/]+)$/);
+    if (investorId && method === "GET") {
+      const result = await getInvestor(investorId);
+      return result ? response(200, result) : response(404, { error: "Investor not found" });
+    }
+    if (investorId && method === "POST") {
+      const result = await updateInvestor(investorId, jsonBody(event) as Record<string, unknown>, auth);
+      if (!result) return response(404, { error: "Investor not found" });
+      if (result.changes.length) await insertAudit({ event: "investor_updated", actorSubject: auth.subject, actorEmail: auth.email, detail: `investor=${investorId};fields=${result.changes.length}`, ...meta, createdAt: new Date().toISOString() });
+      return response(200, { ...result, ...(await getInvestor(investorId)) });
     }
 
     const downloadId = idFrom(path, /^\/documents\/([^/]+)\/download$/);

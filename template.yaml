@@ -91,6 +91,22 @@ Resources:
         DownloadGet:
           Type: HttpApi
           Properties: { ApiId: !Ref DataRoomHttpApi, Path: "/documents/{id}/download", Method: GET }
+        # Private investor pipeline (admin-only, enforced in the handler).
+        InvestorsGet:
+          Type: HttpApi
+          Properties: { ApiId: !Ref DataRoomHttpApi, Path: /investors, Method: GET }
+        InvestorsPost:
+          Type: HttpApi
+          Properties: { ApiId: !Ref DataRoomHttpApi, Path: /investors, Method: POST }
+        InvestorGet:
+          Type: HttpApi
+          Properties: { ApiId: !Ref DataRoomHttpApi, Path: "/investors/{id}", Method: GET }
+        InvestorPost:
+          Type: HttpApi
+          Properties: { ApiId: !Ref DataRoomHttpApi, Path: "/investors/{id}", Method: POST }
+        InvestorActivityPost:
+          Type: HttpApi
+          Properties: { ApiId: !Ref DataRoomHttpApi, Path: "/investors/{id}/activity", Method: POST }
 
   DataRoomBucket:
     Type: AWS::S3::Bucket
