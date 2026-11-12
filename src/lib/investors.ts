@@ -44,30 +44,85 @@ const COLUMNS: Record<string, { field: keyof InvestorInput; kind?: "date" | "num
 };
 
 function normalise(header: Cell) { return String(header ?? "").trim().toLowerCase().replace(/\s+/g, " "); }
+function text(cell: Cell | undefined) { const value = cell === null || cell === undefined ? "" : String(cell).trim(); return value; }
+
+// The old Fundraising CRM template used different stage names; translate them.
+const TEMPLATE_STAGES: Record<string, string> = {
+  "prospect identified": "Not started", "research complete": "Not started", "warm intro requested": "Intro requested",
+  "outreach sent": "Waiting reply", "reply received": "Waiting reply", "pitch deck sent": "Waiting reply",
+  "intro call scheduled": "Meeting booked", "intro call complete": "Meeting booked", "pitch meeting scheduled": "Meeting booked",
+  "pitch meeting complete": "Meeting booked", "partner meeting": "Meeting booked", "due diligence": "Due diligence",
+  "term sheet received": "Term sheet", "closed won": "Closed won", "closed lost": "Passed", "passed": "Passed", "on hold": "On hold",
+};
+
+function fromTemplate(grid: Cell[][], headerRow: number): InvestorInput[] {
+  const headers = grid[headerRow].map((cell) => COLUMNS[normalise(cell)]);
+  const rows: InvestorInput[] = [];
+  for (const line of grid.slice(headerRow + 1)) {
+    const row: Record<string, unknown> = {};
+    headers.forEach((column, index) => {
+      if (!column) return;
+      const cell = line[index] ?? null;
+      if (cell === null || cell === "") return;
+      if (column.kind === "date") { const date = excelDate(cell); if (date) row[column.field] = date; return; }
+      if (column.kind === "number" || column.kind === "percent") { const n = typeof cell === "number" ? cell : Number(String(cell).replace(/[,%$\s]/g, "")); if (Number.isFinite(n)) row[column.field] = n; return; }
+      row[column.field] = typeof cell === "string" ? cell.trim() : String(cell);
+    });
+    if (typeof row.status === "string") row.status = TEMPLATE_STAGES[row.status.toLowerCase()] ?? row.status;
+    if (typeof row.name === "string" && row.name) rows.push(row as InvestorInput);
+  }
+  // Probability may be stored as a fraction (0.25 shown as 25%) or a whole number.
+  const fractions = rows.every((row) => row.probability == null || row.probability <= 1);
+  if (fractions) for (const row of rows) if (row.probability != null) row.probability = Math.round(row.probability * 100);
+  return rows;
+}
+
+// Deeptrack investor list: "#, Investor, Type, Base, Cheque & stage, Thesis, Portfolio, Recent activity,
+// Route / contact, Fit (1-5), Why, Pipeline stage, Last action, Next step, Next date, Source".
+function fromInvestorList(grid: Cell[][], headerRow: number): InvestorInput[] {
+  const index = new Map(grid[headerRow].map((cell, i) => [normalise(cell), i] as const));
+  const get = (line: Cell[], ...names: string[]) => { for (const name of names) { const i = index.get(name); if (i !== undefined) return text(line[i]); } return ""; };
+  const rows: InvestorInput[] = [];
+  for (const line of grid.slice(headerRow + 1)) {
+    const name = get(line, "investor");
+    const stage = get(line, "pipeline stage");
+    if (!name || (!stage && !get(line, "type"))) continue; // skips blank and section-heading rows
+    const fit = Number(get(line, "fit (1-5)", "fit"));
+    const nextStep = get(line, "next step");
+    const notes = [
+      Number.isFinite(fit) && fit > 0 ? `Fit: ${fit}/5` : "",
+      get(line, "last action") && `Last action: ${get(line, "last action")}`,
+      get(line, "route / contact") && `Route / contact: ${get(line, "route / contact")}`,
+      get(line, "portfolio") && `Portfolio: ${get(line, "portfolio")}`,
+      get(line, "recent activity") && `Recent activity: ${get(line, "recent activity")}`,
+      get(line, "source") && `Source: ${get(line, "source")}`,
+    ].filter(Boolean).join("\n");
+    const nextDate = index.has("next date") ? excelDate(line[index.get("next date")!] ?? null) : null;
+    rows.push({
+      name,
+      type: get(line, "type") || null,
+      geography: get(line, "base") || null,
+      stageFocus: get(line, "cheque & stage") || null,
+      sectorFocus: get(line, "thesis") || null,
+      warmIntroSource: get(line, "route / contact") || null,
+      priority: !Number.isFinite(fit) || fit <= 0 ? null : fit >= 4 ? "High" : fit === 3 ? "Medium" : "Low",
+      status: stage || "Not started",
+      nextAction: nextStep && !/^none$/i.test(nextStep) ? nextStep : null,
+      nextFollowUp: nextDate,
+      introAngle: get(line, "why") || null,
+      notes: notes || null,
+    });
+  }
+  return rows;
+}
 
 export async function investorsFromSpreadsheet(file: File): Promise<{ sheet: string; rows: InvestorInput[] }> {
   const sheets = await readWorkbook(file);
   for (const [name, grid] of sheets) {
-    const headerRow = grid.findIndex((row) => row.some((cell) => normalise(cell) === "investor/fund"));
-    if (headerRow < 0) continue;
-    const headers = grid[headerRow].map((cell) => COLUMNS[normalise(cell)]);
-    const rows: InvestorInput[] = [];
-    for (const line of grid.slice(headerRow + 1)) {
-      const row: Record<string, unknown> = {};
-      headers.forEach((column, index) => {
-        if (!column) return;
-        const cell = line[index] ?? null;
-        if (cell === null || cell === "") return;
-        if (column.kind === "date") { const date = excelDate(cell); if (date) row[column.field] = date; return; }
-        if (column.kind === "number" || column.kind === "percent") { const n = typeof cell === "number" ? cell : Number(String(cell).replace(/[,%$\s]/g, "")); if (Number.isFinite(n)) row[column.field] = n; return; }
-        row[column.field] = typeof cell === "string" ? cell.trim() : String(cell);
-      });
-      if (typeof row.name === "string" && row.name) rows.push(row as InvestorInput);
-    }
-    // Probability may be stored as a fraction (0.25 shown as 25%) or a whole number.
-    const fractions = rows.every((row) => row.probability == null || row.probability <= 1);
-    if (fractions) for (const row of rows) if (row.probability != null) row.probability = Math.round(row.probability * 100);
-    return { sheet: name, rows };
+    const template = grid.findIndex((row) => row.some((cell) => normalise(cell) === "investor/fund"));
+    if (template >= 0) return { sheet: name, rows: fromTemplate(grid, template) };
+    const list = grid.findIndex((row) => row.some((cell) => normalise(cell) === "investor") && row.some((cell) => normalise(cell) === "pipeline stage"));
+    if (list >= 0) return { sheet: name, rows: fromInvestorList(grid, list) };
   }
-  throw new Error("No investor list was found. The file needs a sheet with an \"Investor/Fund\" column, like the Fundraising CRM template.");
+  throw new Error("No investor list was found. The file needs a sheet with an \"Investor\" and a \"Pipeline stage\" column (like Deeptrack_Investor_List.xlsx), or an \"Investor/Fund\" column (like the Fundraising CRM template).");
 }
