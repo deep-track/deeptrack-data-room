@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS data_room_investors (
   owner TEXT,
   fund_size_m NUMERIC,
   typical_check_k NUMERIC,
-  status TEXT NOT NULL DEFAULT 'Prospect Identified',
+  status TEXT NOT NULL DEFAULT 'Not started',
   priority TEXT,
   last_contact DATE,
   next_action TEXT,

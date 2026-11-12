@@ -2,8 +2,9 @@ import { CalendarClock, FileSpreadsheet, Plus, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { investorApi, investorsFromSpreadsheet, type ImportResult, type Investor, type InvestorActivity, type InvestorInput, type InvestorOptions } from "../lib/investors";
 
-const ACTIVE_ORDER = ["Prospect Identified", "Research Complete", "Warm Intro Requested", "Outreach Sent", "Reply Received", "Intro Call Scheduled", "Intro Call Complete", "Pitch Deck Sent", "Pitch Meeting Scheduled", "Pitch Meeting Complete", "Partner Meeting", "Due Diligence", "Term Sheet Received", "Closed Won"];
-const CLOSED = ["Closed Won", "Closed Lost", "Passed"];
+const ACTIVE_ORDER = ["Not started", "Drafted", "Check", "Intro requested", "Waiting reply", "Meeting booked", "Due diligence", "Term sheet", "Closed won"];
+const CLOSED = ["Closed won", "Passed", "Do not contact"];
+const SIDE = ["Watch", "On hold", "Passed", "Do not contact"];
 const AFRICA = /africa|nairobi|kenya|lagos|nigeria|ghana|accra|kigali|rwanda|dakar|senegal|cairo|egypt|johannesburg|cape town|south africa|uganda|tanzania|ethiopia|morocco|pan-african/i;
 type Filter = "all" | "high" | "africa" | "due";
 const FILTERS: [Filter, string][] = [["all", "All"], ["high", "High priority"], ["africa", "Africa"], ["due", "Follow-up due"]];
@@ -53,8 +54,9 @@ export function InvestorPipeline() {
     return haystack.includes(query.trim().toLowerCase());
   }), [sorted, filter, query, horizon]);
 
-  const engagedFrom = ACTIVE_ORDER.indexOf("Reply Received");
-  const engaged = investors.filter((i) => { const at = ACTIVE_ORDER.indexOf(i.status); return at >= engagedFrom && i.status !== "Closed Won"; }).length;
+  const engagedFrom = ACTIVE_ORDER.indexOf("Meeting booked");
+  const engaged = investors.filter((i) => { const at = ACTIVE_ORDER.indexOf(i.status); return at >= engagedFrom && i.status !== "Closed won"; }).length;
+  const contacted = investors.filter((i) => ["Check", "Intro requested", "Waiting reply"].includes(i.status)).length;
   const high = investors.filter((i) => i.priority === "High" && isOpen(i));
   const due = investors.filter((i) => followUpDue(i, horizon));
   const overdue = due.filter((i) => (i.nextFollowUp ?? "") < now).length;
@@ -89,14 +91,14 @@ export function InvestorPipeline() {
     {importResult && <div className="error-banner success-banner" role="status"><span>Imported {importResult.created} investor{importResult.created === 1 ? "" : "s"}{importResult.skipped ? `. Skipped ${importResult.skipped} already in the pipeline: ${importResult.skippedNames.join(", ")}` : ""}.</span><button type="button" onClick={() => setImportResult(null)} aria-label="Dismiss"><X size={16} /></button></div>}
     <section className="metrics metrics-4" aria-label="Pipeline overview">
       <article><span>Investors tracked</span><strong>{investors.length}</strong><p>{typeCounts.slice(0, 2).map(([type, n]) => `${n} ${type}`).join(" · ") || "None yet"}</p></article>
-      <article><span>Engaged</span><strong>{engaged}</strong><p>Replied or further</p></article>
+      <article><span>Engaged</span><strong>{engaged}</strong><p>Meeting booked or further · {contacted} awaiting reply</p></article>
       <article><span>High priority</span><strong>{high.length}</strong><p>{high.filter((i) => AFRICA.test(`${i.geography ?? ""} ${i.sectorFocus ?? ""}`)).length} Africa-focused</p></article>
       <article><span>Follow-ups due</span><strong>{due.length}</strong><p>{overdue ? `${overdue} overdue · ` : ""}Next 7 days</p></article>
     </section>
     <div className="funnel" aria-label="Investors by stage">
       {ACTIVE_ORDER.map((status) => { const n = investors.filter((i) => i.status === status).length; return <div key={status} className={n ? "has" : ""} title={status}><b>{n}</b><span>{sentence(status)}</span></div>; })}
     </div>
-    {offFunnel.length > 0 && <p className="funnel-note">{["Closed Lost", "Passed", "On Hold"].map((s) => [s, offFunnel.filter((i) => i.status === s).length] as const).filter(([, n]) => n).map(([s, n]) => `${n} ${s.toLowerCase()}`).join(" · ")}</p>}
+    {offFunnel.length > 0 && <p className="funnel-note">{SIDE.map((s) => [s, offFunnel.filter((i) => i.status === s).length] as const).filter(([, n]) => n).map(([s, n]) => `${n} ${s.toLowerCase()}`).join(" · ")}</p>}
     <section className="document-panel">
       <div className="table-head"><div><h3>Investors</h3><p>{loading ? "Loading…" : `${visible.length} of ${investors.length} investor${investors.length === 1 ? "" : "s"} · sorted by priority, then next follow-up`}</p></div><div className="chips">{FILTERS.map(([key, label]) => <button key={key} className={`chip ${filter === key ? "on" : ""}`} onClick={() => setFilter(key)}>{label}</button>)}</div></div>
       {loading ? <div className="empty-state">Loading investors…</div> : investors.length === 0 ? <div className="empty-state"><FileSpreadsheet size={28} /><h3>No investors yet</h3><p>Import your Fundraising CRM spreadsheet, or add investors one at a time.</p><button className="primary-button" onClick={() => fileInput.current?.click()}><FileSpreadsheet size={16} /> Import spreadsheet</button></div> : visible.length === 0 ? <div className="empty-state"><h3>No investors match this view</h3></div> :
@@ -199,7 +201,7 @@ function LogMeeting({ investorId, onDone }: { investorId: string; onDone: (resul
 }
 
 function AddInvestorDialog({ options, onClose, onCreated }: { options: InvestorOptions; onClose: () => void; onCreated: (investor: Investor) => void }) {
-  const [form, setForm] = useState({ name: "", type: "VC", stageFocus: "", geography: "", website: "", priority: "Medium", status: "Prospect Identified", nextAction: "" });
+  const [form, setForm] = useState({ name: "", type: "VC", stageFocus: "", geography: "", website: "", priority: "Medium", status: "Not started", nextAction: "" });
   const [busy, setBusy] = useState(false); const [error, setError] = useState("");
   const set = (key: keyof typeof form) => (event: { target: { value: string } }) => setForm((f) => ({ ...f, [key]: event.target.value }));
   async function submit(event: FormEvent) {

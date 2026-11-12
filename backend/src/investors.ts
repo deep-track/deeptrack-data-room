@@ -6,9 +6,10 @@ import type { AuthContext } from "./types.js";
 // (Founder or Investor Relations); handler.ts enforces that before calling in.
 
 export const STATUSES = [
-  "Prospect Identified", "Research Complete", "Warm Intro Requested", "Outreach Sent", "Reply Received",
-  "Intro Call Scheduled", "Intro Call Complete", "Pitch Deck Sent", "Pitch Meeting Scheduled", "Pitch Meeting Complete",
-  "Partner Meeting", "Due Diligence", "Term Sheet Received", "Closed Won", "Closed Lost", "Passed", "On Hold",
+  // Main pipeline, in order.
+  "Not started", "Drafted", "Check", "Intro requested", "Waiting reply", "Meeting booked", "Due diligence", "Term sheet", "Closed won",
+  // Side states.
+  "Watch", "On hold", "Passed", "Do not contact",
 ] as const;
 export const PRIORITIES = ["High", "Medium", "Low"] as const;
 export const INTEREST = ["Hot", "Warm", "Cold", "Unknown"] as const;
@@ -78,7 +79,7 @@ CREATE TABLE IF NOT EXISTS data_room_investors (
   owner TEXT,
   fund_size_m NUMERIC,
   typical_check_k NUMERIC,
-  status TEXT NOT NULL DEFAULT 'Prospect Identified',
+  status TEXT NOT NULL DEFAULT 'Not started',
   priority TEXT,
   last_contact DATE,
   next_action TEXT,
@@ -214,7 +215,7 @@ export async function getInvestor(id: string) {
 
 async function insertOne(client: PoolClient, values: Partial<Record<FieldName, string | number | null>>, auth: AuthContext) {
   const ref = (values.ref as string | null | undefined) ?? await nextRef(client);
-  const row = { ...values, ref, status: values.status ?? "Prospect Identified" };
+  const row = { ...values, ref, status: values.status ?? "Not started" };
   const fields = FIELD_NAMES.filter((field) => field in row);
   const columns = fields.map((field) => FIELDS[field][0]);
   const params = fields.map((field) => (row as Record<string, unknown>)[field] ?? null);
