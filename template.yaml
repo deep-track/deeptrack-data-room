@@ -46,7 +46,7 @@ Globals:
         DATABASE_URL: !Ref DatabaseUrl
         DATA_ROOM_S3_BUCKET: !Ref DataRoomBucket
         DATABASE_SSL: 'true'
-        DATA_ROOM_MAX_FILE_BYTES: '26214400'
+        DATA_ROOM_MAX_FILE_BYTES: '10485760'
 
 Resources:
   DataRoomHttpApi:

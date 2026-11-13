@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { requireAuth } from "./auth.js";
 import { acknowledgeNda, ensureBaseSchema, addDocumentVersion, getActiveGrant, getDocument, insertAudit, insertDocument, listAccessGrants, listApprovedDocuments, listAuditEvents, markUploadIntentConsumed, query, revokeAccessGrant, updateDocumentStatus, upsertAccessGrant, withTransaction } from "./db.js";
 import { createDownloadUrl, createUploadUrl, validateUpload } from "./storage.js";
+import { isFolder, isVersionLabel } from "./taxonomy.js";
 import { handleMcp, mcpResource, protectedResourceMetadata } from "./mcp.js";
 import { addActivity, createInvestor, getInvestor, importInvestors, InvestorInputError, listInvestors, updateInvestor } from "./investors.js";
 
@@ -107,6 +108,9 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       const body = jsonBody(event) as Record<string, unknown>;
       const title = String(body.title || "").trim(); const category = String(body.category || "").trim(); const source = body.source === "link" ? "link" : "upload";
       const tier = Number(body.tier); if (!title || !category || ![1, 2, 3].includes(tier)) throw new Error("Title, category, and valid clearance tier are required");
+      if (!isFolder(category)) throw new InvestorInputError("Choose a section and folder from the data room map");
+      const version = typeof body.version === "string" && body.version.trim() ? body.version.trim() : "1.0";
+      if (!isVersionLabel(version)) throw new InvestorInputError("Version label must look like 1.0 or 2.1");
       const storageKey = typeof body.storageKey === "string" ? body.storageKey : undefined;
       if (source === "link") {
         const link = String(body.link || ""); if (!/^https:\/\//i.test(link)) throw new Error("Linked documents require an HTTPS URL");
@@ -118,7 +122,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
           const row = intent.rows[0]; if (!row || row.owner_subject !== auth.subject || row.consumed_at || new Date(row.expires_at) < new Date()) throw new Error("Upload intent is invalid or expired");
           if (!(await markUploadIntentConsumed(storageKey, auth.subject, client))) throw new Error("Upload intent is invalid or already consumed");
         }
-        return insertDocument({ id: randomUUID(), title, category, tier, description: typeof body.description === "string" ? body.description : undefined, source, link: typeof body.link === "string" ? body.link : undefined, storageKey, fileName: typeof body.fileName === "string" ? body.fileName : undefined, mimeType: typeof body.mimeType === "string" ? body.mimeType : undefined, sizeBytes: typeof body.sizeBytes === "number" ? body.sizeBytes : undefined, ownerSubject: auth.subject, status: "approved" }, client);
+        return insertDocument({ id: randomUUID(), title, category, tier, description: typeof body.description === "string" ? body.description : undefined, source, link: typeof body.link === "string" ? body.link : undefined, storageKey, fileName: typeof body.fileName === "string" ? body.fileName : undefined, mimeType: typeof body.mimeType === "string" ? body.mimeType : undefined, sizeBytes: typeof body.sizeBytes === "number" ? body.sizeBytes : undefined, ownerSubject: auth.subject, status: "approved", version }, client);
       });
       await insertAudit({ event: "document_created", actorSubject: auth.subject, actorEmail: auth.email, documentId: document.id, detail: `status=${document.status};tier=${document.tier}`, ...meta, createdAt: new Date().toISOString() });
       return response(201, document);
@@ -137,9 +141,11 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 
     const versionId = idFrom(path, /^\/documents\/([^/]+)\/versions$/);
     if (versionId && method === "POST") {
-      const body = jsonBody(event) as { note?: string };
-      const note = String(body.note || "").trim(); if (!note) throw new Error("Version note is required");
-      const document = await addDocumentVersion(versionId, note, auth.subject);
+      const body = jsonBody(event) as { note?: string; version?: string };
+      const note = String(body.note || "").trim(); if (!note) throw new InvestorInputError("Say what changed in this version");
+      const label = typeof body.version === "string" && body.version.trim() ? body.version.trim() : undefined;
+      if (label && !isVersionLabel(label)) throw new InvestorInputError("Version label must look like 1.0 or 2.1");
+      const document = await addDocumentVersion(versionId, note, auth.subject, label);
       if (!document) return response(404, { error: "Document not found" });
       await insertAudit({ event: "document_version_added", actorSubject: auth.subject, actorEmail: auth.email, documentId: versionId, detail: note, ...meta, createdAt: new Date().toISOString() });
       return response(200, document);

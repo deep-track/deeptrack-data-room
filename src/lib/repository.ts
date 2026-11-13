@@ -50,7 +50,7 @@ function recordFrom(input: NewDocument, overrides: Partial<DataRoomDocument> = {
     id: randomId("doc"),
     createdAt: now,
     updatedAt: now,
-    versions: [{ version: "1.0", createdAt: now, note: "Initial filing" }],
+    versions: [{ version: input.version || "1.0", createdAt: now, note: "Initial filing" }],
     ...overrides,
   };
 }
@@ -89,6 +89,19 @@ export class LocalDataRoomRepository implements DataRoomRepository {
     transaction.objectStore(DOCUMENT_STORE).put(record);
     await transactionDone(transaction);
     return record;
+  }
+
+  async addVersion(documentId: string, note: string, version?: string): Promise<DataRoomDocument> {
+    const documents = await this.listDocuments();
+    const document = documents.find((item) => item.id === documentId);
+    if (!document) throw new Error("Document not found");
+    const last = Number(document.versions.at(-1)?.version ?? "1.0");
+    const next = { ...document, updatedAt: new Date().toISOString(), versions: [...document.versions, { version: version || (Number.isFinite(last) ? (last + 0.1).toFixed(1) : "1.1"), createdAt: new Date().toISOString(), note }] };
+    const database = await openDatabase();
+    const transaction = database.transaction(DOCUMENT_STORE, "readwrite");
+    transaction.objectStore(DOCUMENT_STORE).put(next);
+    await transactionDone(transaction);
+    return next;
   }
 
   async getDownloadUrl(documentId: string): Promise<string | null> {
@@ -132,6 +145,8 @@ export class RemoteDataRoomRepository implements DataRoomRepository {
   }
 
   createLinkedDocument(document: NewDocument) { return this.request<DataRoomDocument>("/documents", { method: "POST", body: JSON.stringify(document) }); }
+
+  addVersion(documentId: string, note: string, version?: string) { return this.request<DataRoomDocument>(`/documents/${encodeURIComponent(documentId)}/versions`, { method: "POST", body: JSON.stringify({ note, version }) }); }
 
   async getDownloadUrl(documentId: string): Promise<string | null> {
     const result = await this.request<{ url: string }>(`/documents/${encodeURIComponent(documentId)}/download`);

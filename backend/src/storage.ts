@@ -1,5 +1,6 @@
 import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { InvestorInputError } from "./investors.js";
 
 const region = process.env.AWS_REGION || "af-south-1";
 const bucket = () => {
@@ -12,12 +13,13 @@ const bucket = () => {
 // matches it, so only send checksums when S3 requires them.
 const client = new S3Client({ region, requestChecksumCalculation: "WHEN_REQUIRED" });
 
+// These are the filer's mistakes, so they come back as 400 with the message.
 export function validateUpload(fileName: string, contentType: string, contentLength: number) {
-  const max = Number(process.env.DATA_ROOM_MAX_FILE_BYTES || 25 * 1024 * 1024);
-  if (!fileName || fileName.length > 240) throw new Error("Invalid file name");
-  if (!Number.isSafeInteger(contentLength) || contentLength <= 0 || contentLength > max) throw new Error("File size is not permitted");
-  if (!contentType || contentType.length > 160) throw new Error("Invalid content type");
-  if (/\.(exe|dll|bat|cmd|sh|js|mjs|html?|svg)$/i.test(fileName)) throw new Error("Executable or active-content files are not permitted");
+  const max = Number(process.env.DATA_ROOM_MAX_FILE_BYTES || 10 * 1024 * 1024);
+  if (!fileName || fileName.length > 240) throw new InvestorInputError("Invalid file name");
+  if (!Number.isSafeInteger(contentLength) || contentLength <= 0 || contentLength > max) throw new InvestorInputError("Uploads are capped at 10 MB per file; use a link for larger files");
+  if (!contentType || contentType.length > 160) throw new InvestorInputError("Invalid content type");
+  if (/\.(exe|dll|bat|cmd|sh|js|mjs|html?|svg)$/i.test(fileName)) throw new InvestorInputError("Executable or active-content files are not permitted");
 }
 
 export async function createUploadUrl(storageKey: string, contentType: string) {
