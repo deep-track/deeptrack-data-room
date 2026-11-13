@@ -91,6 +91,14 @@ export class LocalDataRoomRepository implements DataRoomRepository {
     return record;
   }
 
+  async withdraw(documentId: string): Promise<void> {
+    const database = await openDatabase();
+    const transaction = database.transaction([DOCUMENT_STORE, FILE_STORE], "readwrite");
+    transaction.objectStore(DOCUMENT_STORE).delete(documentId);
+    transaction.objectStore(FILE_STORE).delete(documentId);
+    await transactionDone(transaction);
+  }
+
   async addVersion(documentId: string, note: string, version?: string): Promise<DataRoomDocument> {
     const documents = await this.listDocuments();
     const document = documents.find((item) => item.id === documentId);
@@ -103,6 +111,8 @@ export class LocalDataRoomRepository implements DataRoomRepository {
     await transactionDone(transaction);
     return next;
   }
+
+  getViewUrl(documentId: string) { return this.getDownloadUrl(documentId); }
 
   async getDownloadUrl(documentId: string): Promise<string | null> {
     const database = await openDatabase();
@@ -146,7 +156,13 @@ export class RemoteDataRoomRepository implements DataRoomRepository {
 
   createLinkedDocument(document: NewDocument) { return this.request<DataRoomDocument>("/documents", { method: "POST", body: JSON.stringify(document) }); }
 
+  async withdraw(documentId: string) { await this.request<DataRoomDocument>(`/documents/${encodeURIComponent(documentId)}/status`, { method: "POST", body: JSON.stringify({ status: "withdrawn" }) }); }
   addVersion(documentId: string, note: string, version?: string) { return this.request<DataRoomDocument>(`/documents/${encodeURIComponent(documentId)}/versions`, { method: "POST", body: JSON.stringify({ note, version }) }); }
+
+  async getViewUrl(documentId: string): Promise<string | null> {
+    const result = await this.request<{ url: string }>(`/documents/${encodeURIComponent(documentId)}/download?mode=view`);
+    return result.url;
+  }
 
   async getDownloadUrl(documentId: string): Promise<string | null> {
     const result = await this.request<{ url: string }>(`/documents/${encodeURIComponent(documentId)}/download`);

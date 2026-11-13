@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@auth0/auth0-react": "^2.24.1",
+    "docx-preview": "^0.3.6",
     "lucide-react": "^0.468.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

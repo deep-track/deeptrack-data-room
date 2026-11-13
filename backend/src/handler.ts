@@ -1,7 +1,7 @@
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from "aws-lambda";
 import { randomUUID } from "node:crypto";
 import { requireAuth } from "./auth.js";
-import { acknowledgeNda, ensureBaseSchema, addDocumentVersion, getActiveGrant, getDocument, insertAudit, insertDocument, listAccessGrants, listApprovedDocuments, listAuditEvents, markUploadIntentConsumed, query, revokeAccessGrant, updateDocumentStatus, upsertAccessGrant, withTransaction } from "./db.js";
+import { acknowledgeNda, inviteInvestor, setGrantTier, ensureBaseSchema, addDocumentVersion, getActiveGrant, getDocument, insertAudit, insertDocument, listAccessGrants, listApprovedDocuments, listAuditEvents, markUploadIntentConsumed, query, revokeAccessGrant, updateDocumentStatus, upsertAccessGrant, withTransaction } from "./db.js";
 import { createDownloadUrl, createUploadUrl, validateUpload } from "./storage.js";
 import { isFolder, isVersionLabel } from "./taxonomy.js";
 import { handleMcp, mcpResource, protectedResourceMetadata } from "./mcp.js";
@@ -31,13 +31,13 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     if (path.startsWith("/.well-known/oauth-protected-resource") && method === "GET") return protectedResourceMetadata(event);
     if (path === "/mcp") return handleMcp(event, handler);
 
-    const adminRoute = (method === "POST" && (path === "/uploads" || path === "/documents" || path === "/access/grants")) || (method === "GET" && (path === "/access/grants" || path === "/audit")) || (method === "POST" && /^\/access\/grants\/[^/]+\/revoke$/.test(path)) || (method === "POST" && /^\/documents\/[^/]+\/(status|versions)$/.test(path)) || path === "/investors" || path.startsWith("/investors/");
+    const adminRoute = (method === "POST" && (path === "/uploads" || path === "/documents" || path === "/access/grants")) || (method === "GET" && (path === "/access/grants" || path === "/audit")) || (method === "POST" && /^\/access\/grants\/[^/]+\/(revoke|tier)$/.test(path)) || (method === "POST" && /^\/documents\/[^/]+\/(status|versions)$/.test(path)) || path === "/investors" || path.startsWith("/investors/");
     const auth = await requireAuth(event, adminRoute ? "admin" : "any", [mcpResource(event)]);
     const meta = clientMeta(event);
     await ensureBaseSchema();
 
     if (path === "/access/status" && method === "GET") {
-      const grant = auth.role === "investor" ? await getActiveGrant(auth.subject) : undefined;
+      const grant = auth.role === "investor" ? await getActiveGrant(auth.subject, auth.verifiedEmail) : undefined;
       if (auth.role === "investor" && !grant) throw new Error("No active data-room grant is assigned");
       return response(200, { role: auth.role, clearanceTier: grant?.clearanceTier ?? auth.clearanceTier, grant: grant ? { investorEmail: grant.investorEmail, firmName: grant.firmName, clearanceTier: grant.clearanceTier, ndaVersion: grant.ndaVersion, ndaAcknowledgedAt: grant.ndaAcknowledgedAt, expiresAt: grant.expiresAt } : undefined });
     }
@@ -45,7 +45,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     if (path === "/documents" && method === "GET") {
       let clearanceTier = auth.clearanceTier;
       if (auth.role === "investor") {
-        const grant = await getActiveGrant(auth.subject);
+        const grant = await getActiveGrant(auth.subject, auth.verifiedEmail);
         if (!grant) throw new Error("No active data-room grant is assigned");
         if (!grant.ndaAcknowledgedAt) throw new Error("Current NDA acknowledgement is required");
         clearanceTier = grant.clearanceTier;
@@ -64,10 +64,29 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       const clearanceTier = Number(body.clearanceTier);
       const ndaVersion = String(body.ndaVersion || "").trim();
       const expiresAt = String(body.expiresAt || "");
-      if (!investorSubject || !/^\S+@\S+\.\S+$/.test(investorEmail) || ![1, 2, 3].includes(clearanceTier) || !ndaVersion || !expiresAt || Number.isNaN(Date.parse(expiresAt)) || Date.parse(expiresAt) <= Date.now()) throw new Error("Valid investor, clearance, NDA version, and future expiry are required");
-      const grant = await upsertAccessGrant({ investorSubject, investorEmail, firmName: typeof body.firmName === "string" ? body.firmName.trim() : undefined, clearanceTier, ndaVersion, expiresAt, createdBySubject: auth.subject });
-      await insertAudit({ event: "access_grant_created", actorSubject: auth.subject, actorEmail: auth.email, detail: `investor=${investorSubject};tier=${clearanceTier};expires=${expiresAt}`, ...meta, createdAt: new Date().toISOString() });
-      return response(201, grant);
+      const firmName = typeof body.firmName === "string" && body.firmName.trim() ? body.firmName.trim() : undefined;
+      if (!/^\S+@\S+\.\S+$/.test(investorEmail)) throw new InvestorInputError("Enter the investor's email address");
+      if (![1, 2].includes(clearanceTier)) throw new InvestorInputError("Investors start at General or Diligence; Restricted is for the Founder and Chief of Staff only");
+      if (!ndaVersion) throw new InvestorInputError("NDA version is required");
+      if (!expiresAt || Number.isNaN(Date.parse(expiresAt)) || Date.parse(expiresAt) <= Date.now()) throw new InvestorInputError("Choose an access end date in the future");
+      if (investorSubject) {
+        const grant = await upsertAccessGrant({ investorSubject, investorEmail, firmName, clearanceTier, ndaVersion, expiresAt, createdBySubject: auth.subject });
+        await insertAudit({ event: "access_grant_created", actorSubject: auth.subject, actorEmail: auth.email, detail: `investor=${investorSubject};tier=${clearanceTier};expires=${expiresAt}`, ...meta, createdAt: new Date().toISOString() });
+        return response(201, grant);
+      }
+      const { grant, reinvited } = await inviteInvestor({ investorEmail, firmName, clearanceTier, ndaVersion, expiresAt, createdBySubject: auth.subject });
+      await insertAudit({ event: reinvited ? "investor_reinvited" : "investor_invited", actorSubject: auth.subject, actorEmail: auth.email, detail: `email=${investorEmail};firm=${firmName ?? ""};tier=${clearanceTier};expires=${expiresAt}`, ...meta, createdAt: new Date().toISOString() });
+      return response(reinvited ? 200 : 201, grant);
+    }
+
+    const tierId = idFrom(path, /^\/access\/grants\/([^/]+)\/tier$/);
+    if (tierId && method === "POST") {
+      const tier = Number((jsonBody(event) as { clearanceTier?: number }).clearanceTier);
+      if (tier !== 1 && tier !== 2) throw new InvestorInputError("Tier must be General (1) or Diligence (2)");
+      const grant = await setGrantTier(tierId, tier);
+      if (!grant) return response(404, { error: "Grant not found or revoked" });
+      await insertAudit({ event: "access_tier_changed", actorSubject: auth.subject, actorEmail: auth.email, detail: `grant=${tierId};tier=${tier}`, ...meta, createdAt: new Date().toISOString() });
+      return response(200, grant);
     }
 
     if (path === "/access/nda" && method === "POST") {
@@ -185,13 +204,14 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     if (downloadId && method === "GET") {
       const document = await getDocument(downloadId); if (!document || document.status !== "approved") return response(404, { error: "Document not available" });
       if (auth.role === "investor") {
-        const grant = await getActiveGrant(auth.subject);
+        const grant = await getActiveGrant(auth.subject, auth.verifiedEmail);
         if (!grant || !grant.ndaAcknowledgedAt || document.tier > grant.clearanceTier) return response(404, { error: "Document not available" });
       } else if (document.tier > auth.clearanceTier) return response(404, { error: "Document not available" });
       if (document.source === "link" && document.link) return response(200, { url: document.link });
       if (!document.storageKey) return response(404, { error: "Document file unavailable" });
-      const url = await createDownloadUrl(document.storageKey, document.fileName);
-      await insertAudit({ event: "document_download_url_created", actorSubject: auth.subject, actorEmail: auth.email, documentId: document.id, ...meta, createdAt: new Date().toISOString() });
+      const view = event.queryStringParameters?.mode === "view";
+      const url = await createDownloadUrl(document.storageKey, document.fileName, view);
+      await insertAudit({ event: view ? "document_viewed" : "document_download_url_created", actorSubject: auth.subject, actorEmail: auth.email, documentId: document.id, ...meta, createdAt: new Date().toISOString() });
       return response(200, { url });
     }
 

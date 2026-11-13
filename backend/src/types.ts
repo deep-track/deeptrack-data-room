@@ -45,6 +45,8 @@ export type AuditEvent = {
 export type AuthContext = {
   subject: string;
   email?: string;
+  /** Email Auth0 has verified for this person (used to claim an invitation). */
+  verifiedEmail?: string;
   name?: string;
   role: Role;
   clearanceTier: ClearanceTier;

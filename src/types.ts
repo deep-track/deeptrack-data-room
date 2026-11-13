@@ -45,5 +45,7 @@ export type DataRoomRepository = {
   createUploadedDocument: (document: NewDocument, file: File) => Promise<DataRoomDocument>;
   createLinkedDocument: (document: NewDocument) => Promise<DataRoomDocument>;
   getDownloadUrl: (documentId: string) => Promise<string | null>;
+  getViewUrl: (documentId: string) => Promise<string | null>;
   addVersion: (documentId: string, note: string, version?: string) => Promise<DataRoomDocument>;
+  withdraw: (documentId: string) => Promise<void>;
 };

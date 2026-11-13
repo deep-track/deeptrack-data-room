@@ -104,6 +104,9 @@ Resources:
         AccessGrantsPost:
           Type: HttpApi
           Properties: { ApiId: !Ref DataRoomHttpApi, Path: /access/grants, Method: POST }
+        AccessGrantTierPost:
+          Type: HttpApi
+          Properties: { ApiId: !Ref DataRoomHttpApi, Path: "/access/grants/{id}/tier", Method: POST }
         AccessGrantRevokePost:
           Type: HttpApi
           Properties: { ApiId: !Ref DataRoomHttpApi, Path: "/access/grants/{id}/revoke", Method: POST }

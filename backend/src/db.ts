@@ -146,10 +146,13 @@ export type AccessGrant = {
   revokedAt?: string;
 };
 
-export async function getActiveGrant(subject: string): Promise<AccessGrant | undefined> {
-  const result = await query("SELECT id, investor_subject, investor_email, firm_name, clearance_tier, nda_version, nda_acknowledged_at, expires_at, revoked_at FROM data_room_access_grants WHERE investor_subject = $1 AND revoked_at IS NULL AND expires_at > now()", [subject]);
-  const row = result.rows[0] as Record<string, unknown> | undefined;
-  if (!row) return undefined;
+// Invitations are stored against the investor's email (investor_subject = "pending:<email>")
+// until that person signs in with the same Auth0-verified email; the grant is then bound to
+// their Auth0 subject. Nobody can claim an invitation with an unverified email.
+const PENDING = "pending:";
+const GRANT_COLUMNS = "id, investor_subject, investor_email, firm_name, clearance_tier, nda_version, nda_acknowledged_at, expires_at, revoked_at";
+
+function mapGrant(row: Record<string, unknown>): AccessGrant {
   return {
     id: String(row.id), investorSubject: String(row.investor_subject), investorEmail: String(row.investor_email),
     firmName: row.firm_name ? String(row.firm_name) : undefined, clearanceTier: Number(row.clearance_tier) as 1 | 2 | 3,
@@ -158,9 +161,36 @@ export async function getActiveGrant(subject: string): Promise<AccessGrant | und
   };
 }
 
+export async function getActiveGrant(subject: string, verifiedEmail?: string): Promise<AccessGrant | undefined> {
+  const result = await query(`SELECT ${GRANT_COLUMNS} FROM data_room_access_grants WHERE investor_subject = $1 AND revoked_at IS NULL AND expires_at > now()`, [subject]);
+  if (result.rows[0]) return mapGrant(result.rows[0] as Record<string, unknown>);
+  if (!verifiedEmail) return undefined;
+  // First sign-in after an invitation: bind the pending invitation to this identity.
+  const claimed = await query(`UPDATE data_room_access_grants SET investor_subject = $1 WHERE investor_subject = $2 AND revoked_at IS NULL AND expires_at > now() AND NOT EXISTS (SELECT 1 FROM data_room_access_grants WHERE investor_subject = $1) RETURNING ${GRANT_COLUMNS}`, [subject, PENDING + verifiedEmail.toLowerCase()]);
+  return claimed.rows[0] ? mapGrant(claimed.rows[0] as Record<string, unknown>) : undefined;
+}
+
 export async function upsertAccessGrant(input: { investorSubject: string; investorEmail: string; firmName?: string; clearanceTier: number; ndaVersion: string; expiresAt: string; createdBySubject: string }) {
-  const result = await query("INSERT INTO data_room_access_grants (investor_subject, investor_email, firm_name, clearance_tier, nda_version, expires_at, created_by_subject) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (investor_subject) DO UPDATE SET investor_email=excluded.investor_email, firm_name=excluded.firm_name, clearance_tier=excluded.clearance_tier, nda_version=excluded.nda_version, expires_at=excluded.expires_at, revoked_at=NULL RETURNING id, investor_subject, investor_email, firm_name, clearance_tier, nda_version, nda_acknowledged_at, expires_at, revoked_at", [input.investorSubject, input.investorEmail, input.firmName ?? null, input.clearanceTier, input.ndaVersion, input.expiresAt, input.createdBySubject]);
-  return getActiveGrant(input.investorSubject) ?? result.rows[0];
+  const result = await query(`INSERT INTO data_room_access_grants (investor_subject, investor_email, firm_name, clearance_tier, nda_version, expires_at, created_by_subject) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (investor_subject) DO UPDATE SET investor_email=excluded.investor_email, firm_name=excluded.firm_name, clearance_tier=excluded.clearance_tier, nda_version=excluded.nda_version, expires_at=excluded.expires_at, revoked_at=NULL RETURNING ${GRANT_COLUMNS}`, [input.investorSubject, input.investorEmail, input.firmName ?? null, input.clearanceTier, input.ndaVersion, input.expiresAt, input.createdBySubject]);
+  return mapGrant(result.rows[0] as Record<string, unknown>);
+}
+
+// Invite (or re-invite) an investor by email. Re-inviting someone who already has a grant
+// updates that grant instead of creating a second one.
+export async function inviteInvestor(input: { investorEmail: string; firmName?: string; clearanceTier: number; ndaVersion: string; expiresAt: string; createdBySubject: string }) {
+  const email = input.investorEmail.trim().toLowerCase();
+  const existing = await query("SELECT id, nda_version FROM data_room_access_grants WHERE lower(investor_email) = $1 ORDER BY created_at DESC LIMIT 1", [email]);
+  const row = existing.rows[0] as { id: string; nda_version: string } | undefined;
+  if (row) {
+    const updated = await query(`UPDATE data_room_access_grants SET firm_name=$2, clearance_tier=$3, nda_version=$4, expires_at=$5, revoked_at=NULL, nda_acknowledged_at = CASE WHEN nda_version = $4 THEN nda_acknowledged_at ELSE NULL END WHERE id=$1 RETURNING ${GRANT_COLUMNS}`, [row.id, input.firmName ?? null, input.clearanceTier, input.ndaVersion, input.expiresAt]);
+    return { grant: mapGrant(updated.rows[0] as Record<string, unknown>), reinvited: true };
+  }
+  return { grant: await upsertAccessGrant({ ...input, investorSubject: PENDING + email, investorEmail: email }), reinvited: false };
+}
+
+export async function setGrantTier(id: string, clearanceTier: 1 | 2) {
+  const result = await query(`UPDATE data_room_access_grants SET clearance_tier = $2 WHERE id = $1 AND revoked_at IS NULL RETURNING ${GRANT_COLUMNS}`, [id, clearanceTier]);
+  return result.rows[0] ? mapGrant(result.rows[0] as Record<string, unknown>) : undefined;
 }
 
 export async function acknowledgeNda(subject: string, version: string) {
@@ -173,9 +203,15 @@ export async function revokeAccessGrant(id: string, actorSubject: string) {
   return result.rowCount === 1;
 }
 
+// For Access & Settings: one row per investor with a plain status.
 export async function listAccessGrants() {
-  const result = await query("SELECT id, investor_subject, investor_email, firm_name, clearance_tier, nda_version, nda_acknowledged_at, expires_at, revoked_at, created_by_subject, created_at FROM data_room_access_grants ORDER BY created_at DESC");
-  return result.rows;
+  const result = await query(`SELECT ${GRANT_COLUMNS}, created_at FROM data_room_access_grants ORDER BY created_at DESC`);
+  return result.rows.map((r) => {
+    const g = mapGrant(r as Record<string, unknown>);
+    const signedIn = !g.investorSubject.startsWith(PENDING);
+    const status = g.revokedAt ? "revoked" : new Date(g.expiresAt) <= new Date() ? "expired" : !signedIn ? "invited" : g.ndaAcknowledgedAt ? "active" : "nda_pending";
+    return { id: g.id, investorEmail: g.investorEmail, firmName: g.firmName, clearanceTier: g.clearanceTier, ndaVersion: g.ndaVersion, ndaAcknowledgedAt: g.ndaAcknowledgedAt, expiresAt: g.expiresAt, revokedAt: g.revokedAt, signedIn, status, createdAt: new Date(String((r as Record<string, unknown>).created_at)).toISOString() };
+  });
 }
 
 export async function listAuditEvents(limit = 100) {
