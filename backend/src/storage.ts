@@ -7,7 +7,10 @@ const bucket = () => {
   if (!value) throw new Error("Missing required server configuration: DATA_ROOM_S3_BUCKET");
   return value;
 };
-const client = new S3Client({ region });
+// Browser uploads use a presigned PUT. Newer SDKs add a CRC32 checksum of an
+// empty body to presigned URLs by default; the browser's real file never
+// matches it, so only send checksums when S3 requires them.
+const client = new S3Client({ region, requestChecksumCalculation: "WHEN_REQUIRED" });
 
 export function validateUpload(fileName: string, contentType: string, contentLength: number) {
   const max = Number(process.env.DATA_ROOM_MAX_FILE_BYTES || 25 * 1024 * 1024);
@@ -18,7 +21,7 @@ export function validateUpload(fileName: string, contentType: string, contentLen
 }
 
 export async function createUploadUrl(storageKey: string, contentType: string) {
-  return getSignedUrl(client, new PutObjectCommand({ Bucket: bucket(), Key: storageKey, ContentType: contentType, ServerSideEncryption: "AES256" }), { expiresIn: 300 });
+  return getSignedUrl(client, new PutObjectCommand({ Bucket: bucket(), Key: storageKey, ContentType: contentType }), { expiresIn: 300 });
 }
 
 export async function createDownloadUrl(storageKey: string, fileName?: string) {
