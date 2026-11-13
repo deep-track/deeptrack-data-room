@@ -46,6 +46,7 @@ Globals:
         DATABASE_URL: !Ref DatabaseUrl
         DATA_ROOM_S3_BUCKET: !Ref DataRoomBucket
         DATABASE_SSL: 'true'
+        INVITE_FROM: Deeptrack Data Room <investors@deeptrack.io>
         DATA_ROOM_MAX_FILE_BYTES: '10485760'
 
 Resources:
@@ -75,6 +76,12 @@ Resources:
       Policies:
         - S3CrudPolicy:
             BucketName: !Ref DataRoomBucket
+        # Invitation emails (backend/src/email.ts) from the deeptrack.io identity only.
+        - Statement:
+            - Effect: Allow
+              Action: ses:SendEmail
+              Resource:
+                - !Sub arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/*
       Events:
         Health:
           Type: HttpApi
@@ -104,6 +111,9 @@ Resources:
         AccessGrantsPost:
           Type: HttpApi
           Properties: { ApiId: !Ref DataRoomHttpApi, Path: /access/grants, Method: POST }
+        AccessGrantEmailPost:
+          Type: HttpApi
+          Properties: { ApiId: !Ref DataRoomHttpApi, Path: "/access/grants/{id}/email", Method: POST }
         AccessGrantTierPost:
           Type: HttpApi
           Properties: { ApiId: !Ref DataRoomHttpApi, Path: "/access/grants/{id}/tier", Method: POST }
@@ -190,7 +200,20 @@ Resources:
               - !Sub '${DataRoomBucket.Arn}/*'
             Condition: { Bool: { 'aws:SecureTransport': 'false' } }
 
+  # Sending identity for invitation emails. Add the three DKIM CNAME records (Outputs) at the
+  # deeptrack.io DNS host; SES verifies the domain once they resolve.
+  InvitationEmailIdentity:
+    Type: AWS::SES::EmailIdentity
+    Properties:
+      EmailIdentity: deeptrack.io
+
 Outputs:
+  DkimRecord1:
+    Value: !Sub '${InvitationEmailIdentity.DkimDNSTokenName1} CNAME ${InvitationEmailIdentity.DkimDNSTokenValue1}'
+  DkimRecord2:
+    Value: !Sub '${InvitationEmailIdentity.DkimDNSTokenName2} CNAME ${InvitationEmailIdentity.DkimDNSTokenValue2}'
+  DkimRecord3:
+    Value: !Sub '${InvitationEmailIdentity.DkimDNSTokenName3} CNAME ${InvitationEmailIdentity.DkimDNSTokenValue3}'
   ApiUrl:
     Description: API Gateway base URL
     Value: !Sub 'https://${DataRoomHttpApi}.execute-api.${AWS::Region}.amazonaws.com'
