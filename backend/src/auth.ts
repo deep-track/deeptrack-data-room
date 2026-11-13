@@ -80,8 +80,12 @@ export async function requireAuth(event: APIGatewayProxyEventV2, minimum: "any" 
   if (role === "investor") { verified = await verifiedEmailFromAuth0(token, payload.exp); role = resolveRole({ ...payload, ...verified }); }
   if (minimum === "admin" && role === "investor") throw new Error("Administrator role required");
   const clearanceTier: ClearanceTier = role === "investor" ? 1 : 3;
+  const verifiedEmail = typeof verified.email === "string" ? verified.email
+    : payload.email_verified === true && typeof payload.email === "string" ? payload.email
+    : typeof payload["https://deeptrack.io/verified_email"] === "string" ? payload["https://deeptrack.io/verified_email"] as string : undefined;
   return {
     subject: payload.sub,
+    verifiedEmail: verifiedEmail?.trim().toLowerCase(),
     email: typeof payload.email === "string" ? payload.email : typeof verified.email === "string" ? verified.email : typeof payload["https://deeptrack.io/verified_email"] === "string" ? payload["https://deeptrack.io/verified_email"] as string : undefined,
     name: typeof payload.name === "string" ? payload.name : undefined,
     role,

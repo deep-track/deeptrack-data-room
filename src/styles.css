@@ -77,3 +77,50 @@ main { min-width: 0; }.topbar { min-height: 92px; display: flex; align-items: ce
 .add-version-form input { border: 1px solid #99D3F0; border-radius: 3px; padding: 9px; color: #333333; background: #fff; }
 .add-version-form .dialog-actions { margin-top: 2px; }
 .form-grid p.field-hint { display: block; }
+
+/* Withdraw a document (admin only) */
+.withdraw-button { display: block; margin: 14px auto 0; color: #808080; font-size: 13px; }
+.withdraw-button:hover { color: #B42318; }
+.withdraw-confirm { margin-top: 14px; padding: 12px; border-left: 3px solid #B42318; background: #FEF3F2; font-size: 13px; }
+.withdraw-confirm p { margin: 6px 0 0; color: #555555; }
+.withdraw-confirm .dialog-actions { margin-top: 10px; }
+.danger-button { background: #B42318; border-color: #B42318; }
+
+/* View documents in the room */
+.row-actions { display: inline-flex; gap: 6px; justify-content: flex-end; }
+.drawer-buttons { display: grid; gap: 8px; margin-top: 18px; }
+.drawer-buttons .drawer-download { margin-top: 0; width: 100%; justify-content: center; }
+.viewer-backdrop { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; padding: 18px; background: rgb(25 30 36 / .7); }
+.viewer { width: min(1100px, 100%); height: min(92vh, 1000px); display: flex; flex-direction: column; background: #fff; border-top: 3px solid #0191DA; }
+.viewer-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; padding: 16px 20px; border-bottom: 1px solid #E6F4FB; }
+.viewer-head h2 { margin: 4px 0 0; font-size: 20px; }
+.viewer-actions { display: flex; align-items: center; gap: 8px; }
+.viewer-body { flex: 1; overflow: auto; background: #F4F6F8; }
+.viewer-frame { width: 100%; height: 100%; border: 0; display: block; background: #fff; }
+.viewer-image { display: block; max-width: 100%; margin: 20px auto; }
+.viewer-text { margin: 0; padding: 20px; white-space: pre-wrap; font-size: 13px; background: #fff; min-height: 100%; }
+.viewer-docx { padding: 12px 0; }
+.viewer-docx .docx-wrapper { background: #F4F6F8; padding: 16px; }
+.viewer-sheets { padding: 16px 20px; }
+.viewer-sheets h3 { margin: 6px 0 8px; font-size: 14px; }
+.viewer-table-wrap { overflow: auto; background: #fff; border: 1px solid #C8D7E1; margin-bottom: 18px; }
+.viewer-table { border-collapse: collapse; font-size: 12px; }
+.viewer-table td { border: 1px solid #E1E8ED; padding: 4px 8px; white-space: nowrap; max-width: 360px; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 640px) { .viewer-backdrop { padding: 0; } .viewer { height: 100vh; } }
+
+/* Access & Settings */
+.invite-form { padding: 0 0 16px; }
+.invite-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 0 20px; align-items: end; }
+.invite-grid label { display: grid; gap: 6px; color: #808080; font-size: 12px; font-weight: 600; }
+.invite-grid input, .invite-grid select { border: 1px solid #99D3F0; border-radius: 3px; padding: 10px; color: #333333; background: #fff; }
+.invite-submit { display: flex; align-items: flex-end; }
+.invite-form .form-error, .invite-form .form-success { margin: 12px 20px 0; }
+.form-success { color: #333333; border-left: 3px solid #12B76A; background: #ECFDF3; padding: 9px 11px; font-size: 13px; }
+.grant-row { display: grid; grid-template-columns: minmax(0, 1.6fr) 90px minmax(0, 1fr) 120px minmax(0, 1.4fr); gap: 12px; align-items: center; padding: 12px 20px; border-top: 1px solid #E6F4FB; font-size: 13px; }
+.grant-who strong, .grant-who small { display: block; overflow: hidden; text-overflow: ellipsis; }
+.grant-who small { color: #808080; }
+.grant-status { font-size: 12px; }
+.status-active { color: #067647; } .status-nda_pending, .status-invited { color: #B54708; } .status-revoked, .status-expired { color: #808080; }
+.grant-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.admin-roles { padding-top: 0; }
+@media (max-width: 920px) { .invite-grid { grid-template-columns: 1fr; } .grant-row { grid-template-columns: 1fr auto; } .grant-row > .mono, .grant-row > .grant-status { grid-column: 1 / -1; } .grant-actions { grid-column: 1 / -1; justify-content: flex-start; } }

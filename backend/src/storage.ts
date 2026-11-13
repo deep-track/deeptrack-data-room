@@ -26,7 +26,8 @@ export async function createUploadUrl(storageKey: string, contentType: string) {
   return getSignedUrl(client, new PutObjectCommand({ Bucket: bucket(), Key: storageKey, ContentType: contentType }), { expiresIn: 300 });
 }
 
-export async function createDownloadUrl(storageKey: string, fileName?: string) {
+// inline: open in the browser (View) instead of saving the file (Download).
+export async function createDownloadUrl(storageKey: string, fileName?: string, inline = false) {
   const safeName = (fileName || "document").replace(/[^a-zA-Z0-9._-]/g, "_");
-  return getSignedUrl(client, new GetObjectCommand({ Bucket: bucket(), Key: storageKey, ResponseContentDisposition: `attachment; filename="${safeName}"` }), { expiresIn: 120 });
+  return getSignedUrl(client, new GetObjectCommand({ Bucket: bucket(), Key: storageKey, ResponseContentDisposition: `${inline ? "inline" : "attachment"}; filename="${safeName}"` }), { expiresIn: 120 });
 }
