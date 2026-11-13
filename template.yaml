@@ -76,7 +76,8 @@ Resources:
       Policies:
         - S3CrudPolicy:
             BucketName: !Ref DataRoomBucket
-        # Invitation emails (backend/src/email.ts) from the deeptrack.io identity only.
+        # Invitation emails (backend/src/email.ts). The deeptrack.io SES identity (Easy DKIM) is created
+        # once outside this stack, because the pipeline role may not manage SES identities.
         - Statement:
             - Effect: Allow
               Action: ses:SendEmail
@@ -200,20 +201,7 @@ Resources:
               - !Sub '${DataRoomBucket.Arn}/*'
             Condition: { Bool: { 'aws:SecureTransport': 'false' } }
 
-  # Sending identity for invitation emails. Add the three DKIM CNAME records (Outputs) at the
-  # deeptrack.io DNS host; SES verifies the domain once they resolve.
-  InvitationEmailIdentity:
-    Type: AWS::SES::EmailIdentity
-    Properties:
-      EmailIdentity: deeptrack.io
-
 Outputs:
-  DkimRecord1:
-    Value: !Sub '${InvitationEmailIdentity.DkimDNSTokenName1} CNAME ${InvitationEmailIdentity.DkimDNSTokenValue1}'
-  DkimRecord2:
-    Value: !Sub '${InvitationEmailIdentity.DkimDNSTokenName2} CNAME ${InvitationEmailIdentity.DkimDNSTokenValue2}'
-  DkimRecord3:
-    Value: !Sub '${InvitationEmailIdentity.DkimDNSTokenName3} CNAME ${InvitationEmailIdentity.DkimDNSTokenValue3}'
   ApiUrl:
     Description: API Gateway base URL
     Value: !Sub 'https://${DataRoomHttpApi}.execute-api.${AWS::Region}.amazonaws.com'
