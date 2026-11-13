@@ -1,7 +1,8 @@
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from "aws-lambda";
 import { randomUUID } from "node:crypto";
 import { requireAuth } from "./auth.js";
-import { acknowledgeNda, inviteInvestor, setGrantTier, ensureBaseSchema, addDocumentVersion, getActiveGrant, getDocument, insertAudit, insertDocument, listAccessGrants, listApprovedDocuments, listAuditEvents, markUploadIntentConsumed, query, revokeAccessGrant, updateDocumentStatus, upsertAccessGrant, withTransaction } from "./db.js";
+import { sendInvitationEmail } from "./email.js";
+import { acknowledgeNda, inviteInvestor, getGrant, setGrantTier, ensureBaseSchema, addDocumentVersion, getActiveGrant, getDocument, insertAudit, insertDocument, listAccessGrants, listApprovedDocuments, listAuditEvents, markUploadIntentConsumed, query, revokeAccessGrant, updateDocumentStatus, upsertAccessGrant, withTransaction } from "./db.js";
 import { createDownloadUrl, createUploadUrl, validateUpload } from "./storage.js";
 import { isFolder, isVersionLabel } from "./taxonomy.js";
 import { handleMcp, mcpResource, protectedResourceMetadata } from "./mcp.js";
@@ -31,7 +32,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     if (path.startsWith("/.well-known/oauth-protected-resource") && method === "GET") return protectedResourceMetadata(event);
     if (path === "/mcp") return handleMcp(event, handler);
 
-    const adminRoute = (method === "POST" && (path === "/uploads" || path === "/documents" || path === "/access/grants")) || (method === "GET" && (path === "/access/grants" || path === "/audit")) || (method === "POST" && /^\/access\/grants\/[^/]+\/(revoke|tier)$/.test(path)) || (method === "POST" && /^\/documents\/[^/]+\/(status|versions)$/.test(path)) || path === "/investors" || path.startsWith("/investors/");
+    const adminRoute = (method === "POST" && (path === "/uploads" || path === "/documents" || path === "/access/grants")) || (method === "GET" && (path === "/access/grants" || path === "/audit")) || (method === "POST" && /^\/access\/grants\/[^/]+\/(revoke|tier|email)$/.test(path)) || (method === "POST" && /^\/documents\/[^/]+\/(status|versions)$/.test(path)) || path === "/investors" || path.startsWith("/investors/");
     const auth = await requireAuth(event, adminRoute ? "admin" : "any", [mcpResource(event)]);
     const meta = clientMeta(event);
     await ensureBaseSchema();
@@ -76,7 +77,21 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
       }
       const { grant, reinvited } = await inviteInvestor({ investorEmail, firmName, clearanceTier, ndaVersion, expiresAt, createdBySubject: auth.subject });
       await insertAudit({ event: reinvited ? "investor_reinvited" : "investor_invited", actorSubject: auth.subject, actorEmail: auth.email, detail: `email=${investorEmail};firm=${firmName ?? ""};tier=${clearanceTier};expires=${expiresAt}`, ...meta, createdAt: new Date().toISOString() });
-      return response(reinvited ? 200 : 201, grant);
+      let email: { sent: boolean; error?: string } | undefined;
+      if (body.sendEmail !== false) {
+        email = await sendInvitationEmail({ to: investorEmail, firmName, clearanceTier, expiresAt, inviterName: auth.name, inviterEmail: auth.email });
+        await insertAudit({ event: email.sent ? "invitation_email_sent" : "invitation_email_failed", actorSubject: auth.subject, actorEmail: auth.email, detail: `email=${investorEmail}`, ...meta, createdAt: new Date().toISOString() });
+      }
+      return response(reinvited ? 200 : 201, { ...grant, emailSent: email?.sent ?? false, emailError: email?.error });
+    }
+
+    const emailId = idFrom(path, /^\/access\/grants\/([^/]+)\/email$/);
+    if (emailId && method === "POST") {
+      const grant = await getGrant(emailId);
+      if (!grant || grant.revokedAt || new Date(grant.expiresAt) <= new Date()) return response(404, { error: "No active invitation to resend" });
+      const email = await sendInvitationEmail({ to: grant.investorEmail, firmName: grant.firmName, clearanceTier: grant.clearanceTier, expiresAt: grant.expiresAt, inviterName: auth.name, inviterEmail: auth.email });
+      await insertAudit({ event: email.sent ? "invitation_email_sent" : "invitation_email_failed", actorSubject: auth.subject, actorEmail: auth.email, detail: `email=${grant.investorEmail};resend=true`, ...meta, createdAt: new Date().toISOString() });
+      return response(200, { emailSent: email.sent, emailError: email.error });
     }
 
     const tierId = idFrom(path, /^\/access\/grants\/([^/]+)\/tier$/);

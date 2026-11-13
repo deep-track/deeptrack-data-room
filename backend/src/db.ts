@@ -188,6 +188,12 @@ export async function inviteInvestor(input: { investorEmail: string; firmName?: 
   return { grant: await upsertAccessGrant({ ...input, investorSubject: PENDING + email, investorEmail: email }), reinvited: false };
 }
 
+export async function getGrant(id: string) {
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return undefined;
+  const result = await query(`SELECT ${GRANT_COLUMNS} FROM data_room_access_grants WHERE id = $1`, [id]);
+  return result.rows[0] ? mapGrant(result.rows[0] as Record<string, unknown>) : undefined;
+}
+
 export async function setGrantTier(id: string, clearanceTier: 1 | 2) {
   const result = await query(`UPDATE data_room_access_grants SET clearance_tier = $2 WHERE id = $1 AND revoked_at IS NULL RETURNING ${GRANT_COLUMNS}`, [id, clearanceTier]);
   return result.rows[0] ? mapGrant(result.rows[0] as Record<string, unknown>) : undefined;

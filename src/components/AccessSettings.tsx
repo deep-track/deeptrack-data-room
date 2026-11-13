@@ -24,6 +24,7 @@ export function AccessSettings({ onLog }: { onLog: (event: string, detail: strin
   const [tier, setTier] = useState<1 | 2>(1);
   const [expires, setExpires] = useState(inDays(90));
   const [nda, setNda] = useState(DEFAULT_NDA);
+  const [sendEmail, setSendEmail] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -42,8 +43,8 @@ export function AccessSettings({ onLog }: { onLog: (event: string, detail: strin
     if (!/^\S+@\S+\.\S+$/.test(address)) return setError("Enter the investor's email address.");
     setBusy("invite");
     try {
-      await authorizedRequest("/access/grants", { method: "POST", body: JSON.stringify({ investorEmail: address, firmName: firm.trim() || undefined, clearanceTier: tier, ndaVersion: nda.trim() || DEFAULT_NDA, expiresAt: new Date(`${expires}T23:59:59`).toISOString() }) });
-      setMessage(`Invited ${address}. Send them https://investors.deeptrack.io and ask them to sign in with Google using ${address}.`);
+      const result = await authorizedRequest<{ emailSent?: boolean; emailError?: string }>("/access/grants", { method: "POST", body: JSON.stringify({ investorEmail: address, firmName: firm.trim() || undefined, clearanceTier: tier, ndaVersion: nda.trim() || DEFAULT_NDA, expiresAt: new Date(`${expires}T23:59:59`).toISOString(), sendEmail }) });
+      setMessage(result.emailSent ? `Invited ${address} and emailed them the invitation.` : `Invited ${address}.${result.emailError ? ` ${result.emailError}` : ""} Send them https://investors.deeptrack.io and ask them to sign in with Google using ${address}.`);
       onLog("Investor invited", `${address} · ${TIER[tier]}`);
       setEmail(""); setFirm(""); setTier(1);
       await load();
@@ -55,6 +56,16 @@ export function AccessSettings({ onLog }: { onLog: (event: string, detail: strin
     setBusy(grant.id); setError(""); setMessage("");
     try { await authorizedRequest(`/access/grants/${encodeURIComponent(grant.id)}/tier`, { method: "POST", body: JSON.stringify({ clearanceTier: next }) }); onLog(next === 2 ? "Diligence granted" : "Set to general", grant.investorEmail); await load(); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "The tier could not be changed."); }
+    finally { setBusy(null); }
+  }
+
+  async function resend(grant: Grant) {
+    setBusy(grant.id); setError(""); setMessage("");
+    try {
+      const result = await authorizedRequest<{ emailSent: boolean; emailError?: string }>(`/access/grants/${encodeURIComponent(grant.id)}/email`, { method: "POST" });
+      if (result.emailSent) { setMessage(`Invitation emailed again to ${grant.investorEmail}.`); onLog("Invitation resent", grant.investorEmail); }
+      else setError(result.emailError ?? "The email could not be sent.");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "The email could not be sent."); }
     finally { setBusy(null); }
   }
 
@@ -79,6 +90,7 @@ export function AccessSettings({ onLog }: { onLog: (event: string, detail: strin
         <label><span>Starting tier</span><select value={tier} onChange={(event) => setTier(Number(event.target.value) as 1 | 2)}><option value={1}>General — first look</option><option value={2}>Diligence — active diligence</option></select></label>
         <label><span>Access until</span><input type="date" value={expires} min={inDays(1)} onChange={(event) => setExpires(event.target.value)} /></label>
         <label><span>NDA version</span><input value={nda} onChange={(event) => setNda(event.target.value)} /></label>
+        <label className="invite-check"><input type="checkbox" checked={sendEmail} onChange={(event) => setSendEmail(event.target.checked)} /> Email the invitation</label>
         <div className="invite-submit"><button className="primary-button" disabled={busy === "invite"}><MailPlus size={16} /> {busy === "invite" ? "Inviting…" : "Invite"}</button></div>
       </div>
       {message && <p className="form-success" role="status">{message}</p>}
@@ -94,6 +106,7 @@ export function AccessSettings({ onLog }: { onLog: (event: string, detail: strin
         <span className={`grant-status status-${grant.status}`}>{STATUS[grant.status]}</span>
         <span className="mono dim">{grant.revokedAt ? `Revoked ${shortDate(grant.revokedAt)}` : `Until ${shortDate(grant.expiresAt)}`}</span>
         <div className="grant-actions">
+          {grant.status === "invited" && <button className="text-button" disabled={busy === grant.id} onClick={() => void resend(grant)}>Resend email</button>}
           {live(grant) && grant.clearanceTier === 1 && <button className="secondary-button" disabled={busy === grant.id} onClick={() => void changeTier(grant, 2)}>Grant diligence</button>}
           {live(grant) && grant.clearanceTier === 2 && <button className="secondary-button" disabled={busy === grant.id} onClick={() => void changeTier(grant, 1)}>Set general</button>}
           {live(grant) && (confirmRevoke === grant.id

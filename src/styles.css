@@ -124,3 +124,5 @@ main { min-width: 0; }.topbar { min-height: 92px; display: flex; align-items: ce
 .grant-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
 .admin-roles { padding-top: 0; }
 @media (max-width: 920px) { .invite-grid { grid-template-columns: 1fr; } .grant-row { grid-template-columns: 1fr auto; } .grant-row > .mono, .grant-row > .grant-status { grid-column: 1 / -1; } .grant-actions { grid-column: 1 / -1; justify-content: flex-start; } }
+.invite-grid label.invite-check { display: flex; align-items: center; gap: 8px; color: #333333; font-weight: 500; font-size: 13px; padding-bottom: 10px; }
+.invite-grid label.invite-check input { width: 16px; height: 16px; padding: 0; }
