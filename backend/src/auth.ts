@@ -5,6 +5,7 @@ import type { AuthContext, ClearanceTier, Role } from "./types.js";
 
 const issuer = () => required("AUTH0_ISSUER").replace(/\/$/, "");
 const audience = () => required("AUTH0_AUDIENCE");
+export const authIssuer = () => `${issuer()}/`;
 const roleClaim = () => process.env.AUTH0_ROLE_CLAIM?.trim() || "https://deeptrack.io/roles";
 const companyClaim = () => process.env.AUTH0_COMPANY_ID_CLAIM?.trim() || "https://deeptrack.io/company_id";
 const jwks = () => createRemoteJWKSet(new URL(`${issuer()}/.well-known/jwks.json`));
@@ -65,11 +66,13 @@ async function verifiedEmailFromAuth0(token: string, tokenExpiry?: number): Prom
   }
 }
 
-export async function requireAuth(event: APIGatewayProxyEventV2, minimum: "any" | "admin" = "any"): Promise<AuthContext> {
+// Tokens may be issued for the web app's API audience or, for Claude's MCP
+// connector, for the MCP endpoint URL itself (OAuth "resource" parameter).
+export async function requireAuth(event: APIGatewayProxyEventV2, minimum: "any" | "admin" = "any", extraAudiences: string[] = []): Promise<AuthContext> {
   const raw = event.headers.authorization || event.headers.Authorization;
   if (!raw?.startsWith("Bearer ")) throw new Error("Authentication required");
   const token = raw.slice(7).trim();
-  const { payload } = await jwtVerify(token, jwks(), { issuer: `${issuer()}/`, audience: audience() });
+  const { payload } = await jwtVerify(token, jwks(), { issuer: `${issuer()}/`, audience: [audience(), ...extraAudiences] });
   if (!payload.sub) throw new Error("Authenticated identity has no subject");
   let role = resolveRole(payload);
   let verified: JWTPayload = {};

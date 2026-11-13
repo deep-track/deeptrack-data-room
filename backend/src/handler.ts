@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { requireAuth } from "./auth.js";
 import { acknowledgeNda, ensureBaseSchema, addDocumentVersion, getActiveGrant, getDocument, insertAudit, insertDocument, listAccessGrants, listApprovedDocuments, listAuditEvents, markUploadIntentConsumed, query, revokeAccessGrant, updateDocumentStatus, upsertAccessGrant, withTransaction } from "./db.js";
 import { createDownloadUrl, createUploadUrl, validateUpload } from "./storage.js";
+import { handleMcp, mcpResource, protectedResourceMetadata } from "./mcp.js";
 import { addActivity, createInvestor, getInvestor, importInvestors, InvestorInputError, listInvestors, updateInvestor } from "./investors.js";
 
 const headers = {
@@ -25,9 +26,12 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     const path = event.rawPath.replace(/^\/api/, "").replace(/\/$/, "") || "/";
     if (method === "OPTIONS") return { statusCode: 204, headers: { ...headers, "access-control-allow-origin": process.env.DATA_ROOM_ORIGIN || "", "access-control-allow-credentials": "true", "access-control-allow-headers": "content-type,authorization", "access-control-allow-methods": "GET,POST,OPTIONS" }, body: "" };
     if (path === "/health" && method === "GET") return response(200, { ok: true, service: "deeptrack-data-room-api" });
+    // MCP connector for Claude (Founder and Investor Relations only; see mcp.ts).
+    if (path.startsWith("/.well-known/oauth-protected-resource") && method === "GET") return protectedResourceMetadata(event);
+    if (path === "/mcp") return handleMcp(event, handler);
 
     const adminRoute = (method === "POST" && (path === "/uploads" || path === "/documents" || path === "/access/grants")) || (method === "GET" && (path === "/access/grants" || path === "/audit")) || (method === "POST" && /^\/access\/grants\/[^/]+\/revoke$/.test(path)) || (method === "POST" && /^\/documents\/[^/]+\/(status|versions)$/.test(path)) || path === "/investors" || path.startsWith("/investors/");
-    const auth = await requireAuth(event, adminRoute ? "admin" : "any");
+    const auth = await requireAuth(event, adminRoute ? "admin" : "any", [mcpResource(event)]);
     const meta = clientMeta(event);
     await ensureBaseSchema();
 

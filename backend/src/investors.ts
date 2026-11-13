@@ -57,6 +57,9 @@ const FIELDS = {
 type FieldName = keyof typeof FIELDS;
 const FIELD_NAMES = Object.keys(FIELDS) as FieldName[];
 
+// Field catalogue for API clients (the MCP connector describes these to Claude).
+export const INVESTOR_FIELDS = FIELD_NAMES.map((name) => { const kind = FIELDS[name][1]; return { name, label: FIELDS[name][2], kind: typeof kind === "string" ? kind : "choice", choices: typeof kind === "string" ? undefined : [...kind.oneOf] as string[] }; });
+
 export class InvestorInputError extends Error {}
 
 // Keep in step with sql/002_investor_pipeline.sql.
