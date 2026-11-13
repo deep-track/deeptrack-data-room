@@ -9,7 +9,7 @@ export type ReviewSession = {
 
 export const roleDetails: Record<DataRoomRole, { label: string; description: string; clearanceTier: 1 | 2 | 3; administrator: boolean }> = {
   founder: { label: "Founder", description: "Super privileges for room policy, access, publication, and audit oversight.", clearanceTier: 3, administrator: true },
-  investorRelations: { label: "Head of Investor Relations", description: "Operational administrator for disclosure workflow, invitations, and diligence support.", clearanceTier: 3, administrator: true },
+  investorRelations: { label: "Chief of Staff", description: "Same full access and room management rights as the Founder.", clearanceTier: 3, administrator: true },
   investor: { label: "Investor", description: "Read-only access to approved documents within assigned clearance.", clearanceTier: 1, administrator: false },
 };
 

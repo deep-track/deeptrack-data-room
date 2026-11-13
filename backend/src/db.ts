@@ -122,9 +122,9 @@ export async function getDocument(id: string) {
   return result.rows[0] ? mapDocument(result.rows[0]) : undefined;
 }
 
-export async function insertDocument(input: { id: string; title: string; category: string; tier: number; description?: string; source: string; link?: string; storageKey?: string; fileName?: string; mimeType?: string; sizeBytes?: number; ownerSubject: string; status: DocumentStatus }, executor: { query: PoolClient["query"] } = getPool()) {
+export async function insertDocument(input: { id: string; title: string; category: string; tier: number; description?: string; source: string; link?: string; storageKey?: string; fileName?: string; mimeType?: string; sizeBytes?: number; ownerSubject: string; status: DocumentStatus; version?: string }, executor: { query: PoolClient["query"] } = getPool()) {
   const now = new Date().toISOString();
-  const versions = [{ version: "1.0", createdAt: now, note: "Initial filing" }];
+  const versions = [{ version: input.version || "1.0", createdAt: now, note: "Initial filing" }];
   const result = await executor.query("INSERT INTO data_room_documents (id,title,category,tier,description,source,link,storage_key,file_name,mime_type,size_bytes,owner_subject,status,versions,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15,$15) RETURNING *", [input.id,input.title,input.category,input.tier,input.description ?? null,input.source,input.link ?? null,input.storageKey ?? null,input.fileName ?? null,input.mimeType ?? null,input.sizeBytes ?? null,input.ownerSubject,input.status,JSON.stringify(versions),now]);
   return mapDocument(result.rows[0]);
 }
@@ -189,8 +189,9 @@ export async function updateDocumentStatus(id: string, status: DocumentStatus, a
   return result.rows[0] ? mapDocument(result.rows[0]) : undefined;
 }
 
-export async function addDocumentVersion(id: string, note: string, actorSubject: string) {
-  const result = await query("UPDATE data_room_documents SET versions = versions || jsonb_build_array(jsonb_build_object('version', (COALESCE((SELECT max((v->>'version')::numeric) FROM jsonb_array_elements(versions) v), 1) + 1)::text, 'createdAt', now(), 'note', $2)), updated_at = now() WHERE id = $1 RETURNING *", [id, note]);
+// Without a label the next minor version is used (1.0 -> 1.1), as in the user guide.
+export async function addDocumentVersion(id: string, note: string, actorSubject: string, label?: string) {
+  const result = await query("UPDATE data_room_documents SET versions = versions || jsonb_build_array(jsonb_build_object('version', COALESCE($3::text, to_char(COALESCE((SELECT max(substring(v->>'version' from '^[0-9]+(?:[.][0-9]+)?')::numeric) FROM jsonb_array_elements(versions) v), 1) + 0.1, 'FM999990.0')), 'createdAt', now(), 'note', $2::text)), updated_at = now() WHERE id = $1 RETURNING *", [id, note, label ?? null]);
   return result.rows[0] ? mapDocument(result.rows[0]) : undefined;
 }
 

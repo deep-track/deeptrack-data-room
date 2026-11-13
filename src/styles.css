@@ -64,3 +64,16 @@ main { min-width: 0; }.topbar { min-height: 92px; display: flex; align-items: ce
 .workspace-head { flex-wrap: wrap; }
 .funnel span { white-space: normal; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; min-height: 2.5em; }
 @media (max-width: 1360px) and (min-width: 921px) { .investor-heading, .investor-row { grid-template-columns: minmax(170px, 1.3fr) 140px 64px minmax(150px, 1.2fr); }.investor-heading > :nth-child(4), .investor-heading > :nth-child(6), .investor-row > .dim, .investor-row > .mono { display: none; } }
+
+/* Data room map (User Guide): folders under each section, filing hints, add-version form. */
+.nav-item.nav-folder { padding: 7px 10px 7px 37px; font-size: 13px; color: #99D3F0; }
+.nav-item.nav-folder.active, .nav-item.nav-folder:hover { color: #fff; }
+.form-grid .full-field { grid-column: 1 / -1; }
+.field-hint { margin: 0; color: #808080; font-size: 12px; font-weight: 400; line-height: 1.45; }
+.field-hint strong { color: #333333; font-weight: 600; }
+.add-version { margin: 4px 0 12px; }
+.add-version-form { display: grid; gap: 10px; margin: 4px 0 14px; padding: 12px; background: #F2F9FD; border-left: 3px solid #0191DA; }
+.add-version-form label { display: grid; gap: 5px; color: #808080; font-size: 12px; font-weight: 600; }
+.add-version-form input { border: 1px solid #99D3F0; border-radius: 3px; padding: 9px; color: #333333; background: #fff; }
+.add-version-form .dialog-actions { margin-top: 2px; }
+.form-grid p.field-hint { display: block; }

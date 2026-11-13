@@ -5,6 +5,7 @@
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from "aws-lambda";
 import { authIssuer, requireAuth } from "./auth.js";
 import { INVESTOR_FIELDS } from "./investors.js";
+import { FOLDER_KEYS } from "./taxonomy.js";
 
 type Handler = (event: APIGatewayProxyEventV2) => Promise<APIGatewayProxyResultV2>;
 type Json = Record<string, unknown>;
@@ -72,14 +73,14 @@ const TOOLS: Tool[] = [
     inputSchema: { type: "object", properties: { documentId: str("Document ID from list_documents.") }, required: ["documentId"] },
     run: async (a, call) => ok(await call("GET", `/documents/${encodeURIComponent(String(a.documentId))}/download`)) },
   { name: "add_linked_document", title: "Add linked document", description: "Add a document that lives at an HTTPS link (e.g. Google Drive, DocSend). File uploads are done in the web app.",
-    inputSchema: { type: "object", properties: { title: str("Document title."), category: str("Category, e.g. Financials, Legal, Product."), tier: { type: "integer", enum: [1, 2, 3], description: "Clearance tier: 1 = all investors with a grant, 3 = most restricted." }, link: str("HTTPS URL."), description: str("Optional description.") }, required: ["title", "category", "tier", "link"] },
-    run: async (a, call) => ok(await call("POST", "/documents", { title: a.title, category: a.category, tier: a.tier, link: a.link, description: a.description, source: "link" })) },
+    inputSchema: { type: "object", properties: { title: str("Plain, specific title, e.g. 'SAFE Note - $750K pre-seed'."), category: { type: "string", enum: [...FOLDER_KEYS], description: "Section / Folder from the data room map." }, tier: { type: "integer", enum: [1, 2, 3], description: "1 General (any investor with access), 2 Diligence (investors upgraded for diligence), 3 Restricted (Founder and Chief of Staff only). Default to 1 unless there is a reason not to." }, version: str("Version label, default 1.0."), link: str("HTTPS URL."), description: str("Optional description.") }, required: ["title", "category", "tier", "link"] },
+    run: async (a, call) => ok(await call("POST", "/documents", { title: a.title, category: a.category, tier: a.tier, version: a.version, link: a.link, description: a.description, source: "link" })) },
   { name: "set_document_status", title: "Set document status", description: "Change a document's status. Only 'approved' documents are visible to investors; 'withdrawn' hides it.", destructive: true,
     inputSchema: { type: "object", properties: { documentId: str("Document ID."), status: { type: "string", enum: ["draft", "review", "approved", "withdrawn"] } }, required: ["documentId", "status"] },
     run: async (a, call) => ok(await call("POST", `/documents/${encodeURIComponent(String(a.documentId))}/status`, { status: a.status })) },
-  { name: "add_document_version", title: "Add document version note", description: "Record a new version note on a document.",
-    inputSchema: { type: "object", properties: { documentId: str("Document ID."), note: str("What changed in this version.") }, required: ["documentId", "note"] },
-    run: async (a, call) => ok(await call("POST", `/documents/${encodeURIComponent(String(a.documentId))}/versions`, { note: a.note })) },
+  { name: "add_document_version", title: "Add document version", description: "Record a new version of a document with a short note on what changed.",
+    inputSchema: { type: "object", properties: { documentId: str("Document ID."), note: str("What changed in this version."), version: str("Optional label, e.g. 2.0; defaults to the next minor version.") }, required: ["documentId", "note"] },
+    run: async (a, call) => ok(await call("POST", `/documents/${encodeURIComponent(String(a.documentId))}/versions`, { note: a.note, version: a.version })) },
 
   // Access
   { name: "list_access_grants", title: "List access grants", description: "List investor access grants: who can see the data room, at which clearance tier, NDA status and expiry.", readOnly: true, inputSchema: { type: "object", properties: {} },

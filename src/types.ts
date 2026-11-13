@@ -23,7 +23,7 @@ export type DataRoomDocument = {
   versions: DocumentVersion[];
 };
 
-export type NewDocument = Omit<DataRoomDocument, "id" | "createdAt" | "updatedAt" | "versions">;
+export type NewDocument = Omit<DataRoomDocument, "id" | "createdAt" | "updatedAt" | "versions"> & { version?: string };
 
 export type AccessStatus = {
   role: "founder" | "investorRelations" | "investor";
@@ -45,4 +45,5 @@ export type DataRoomRepository = {
   createUploadedDocument: (document: NewDocument, file: File) => Promise<DataRoomDocument>;
   createLinkedDocument: (document: NewDocument) => Promise<DataRoomDocument>;
   getDownloadUrl: (documentId: string) => Promise<string | null>;
+  addVersion: (documentId: string, note: string, version?: string) => Promise<DataRoomDocument>;
 };
