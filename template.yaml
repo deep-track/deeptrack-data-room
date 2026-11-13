@@ -132,6 +132,19 @@ Resources:
         InvestorActivityPost:
           Type: HttpApi
           Properties: { ApiId: !Ref DataRoomHttpApi, Path: "/investors/{id}/activity", Method: POST }
+        # MCP connector for Claude (see backend/src/mcp.ts).
+        McpPost:
+          Type: HttpApi
+          Properties: { ApiId: !Ref DataRoomHttpApi, Path: /mcp, Method: POST }
+        McpGet:
+          Type: HttpApi
+          Properties: { ApiId: !Ref DataRoomHttpApi, Path: /mcp, Method: GET }
+        McpResourceMetadata:
+          Type: HttpApi
+          Properties: { ApiId: !Ref DataRoomHttpApi, Path: /.well-known/oauth-protected-resource, Method: GET }
+        McpResourceMetadataPath:
+          Type: HttpApi
+          Properties: { ApiId: !Ref DataRoomHttpApi, Path: /.well-known/oauth-protected-resource/mcp, Method: GET }
 
   DataRoomBucket:
     Type: AWS::S3::Bucket
