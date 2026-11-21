@@ -26,6 +26,23 @@ Read the following documents before deployment:
 | `ROLE_AND_CONTROL_MODEL.md` | Founder, Investor Relations Officer, and Investor permissions plus comprehensive governance controls. |
 | `DATA_ROOM_VALIDATION.md` | Build and browser smoke-test evidence. |
 
+## Connect to Claude
+
+The data room includes an MCP connector. With it, Claude can read the investor pipeline (stages, overdue next steps, upcoming meetings, data room views) and, after you approve, update it (add investors, log emails, calls and meetings, move stages, set next steps, bulk import). Full details are in [`docs/MCP.md`](docs/MCP.md).
+
+- **Connector URL:** `https://9a8681dr9d.execute-api.eu-west-1.amazonaws.com/mcp`. It becomes `https://investors.deeptrack.io/api/mcp` once the CloudFront step in `docs/MCP.md` is done.
+- **Add it:** Claude → Settings → Connectors → Add custom connector. Paste the URL, then put the "Claude data room connector" Auth0 Client ID and secret under Advanced settings, and sign in with Google.
+- **Who can sign in:** only the two founder accounts built into `backend/src/auth.ts` (`DEFAULT_MCP_EMAILS`), plus emails in the `McpAllowedEmails` stack parameter. Other accounts, including other data room admins, get 403.
+- **Revoke access:**
+  - One person: remove their email from `McpAllowedEmails` and deploy.
+  - One connection: disconnect it in Claude's Connectors settings, or revoke the app for that user in Auth0.
+  - Everyone: rotate or disable the "Claude data room connector" application in Auth0.
+- **Safety:**
+  - Banned and do-not-contact investors refuse every write except a stage change.
+  - Bulk imports are a dry run unless committed.
+  - Every write is logged, before → after, in the append-only audit log.
+  - Requests are rate-limited per user.
+
 ## Security boundary
 
 The browser bundle contains no cloud credentials, no default investor access codes, and no public document URL generation. Production requires server-side session checks, Founder / Investor Relations / Investor role enforcement, clearance enforcement, private object storage, append-only audit events, and short-lived presigned URLs as described in `PRODUCTION_STORAGE_SETUP.md` and `ROLE_AND_CONTROL_MODEL.md`.

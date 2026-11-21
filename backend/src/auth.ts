@@ -66,9 +66,32 @@ async function verifiedEmailFromAuth0(token: string, tokenExpiry?: number): Prom
   }
 }
 
+// ---- MCP connector ---------------------------------------------------------
+// Only these people may authorise Claude's connector (plus MCP_ALLOWED_EMAILS,
+// comma-separated, set on the Lambda). Matched against the Auth0-verified email.
+const DEFAULT_MCP_EMAILS = ["bryan@deeptrack.io", "koyundibryan@gmail.com"];
+export function mcpAllowedEmails() {
+  const extra = (process.env.MCP_ALLOWED_EMAILS ?? "").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
+  return [...new Set([...DEFAULT_MCP_EMAILS, ...extra])];
+}
+
+// Tool calls made by the MCP connector run through the normal API routes as
+// in-process events. The connector has already verified the caller, so those
+// events carry that identity here. A WeakMap keyed by the event object cannot be
+// set from an HTTP request, so this cannot be spoofed from outside.
+export type McpCallContext = { auth: AuthContext; tool: string };
+const mcpCalls = new WeakMap<object, McpCallContext>();
+export function markMcpCall(event: object, context: McpCallContext) { mcpCalls.set(event, context); }
+export function mcpCallOf(event: object) { return mcpCalls.get(event); }
+
 // Tokens may be issued for the web app's API audience or, for Claude's MCP
 // connector, for the MCP endpoint URL itself (OAuth "resource" parameter).
-export async function requireAuth(event: APIGatewayProxyEventV2, minimum: "any" | "admin" = "any", extraAudiences: string[] = []): Promise<AuthContext> {
+export async function requireAuth(event: APIGatewayProxyEventV2, minimum: "any" | "admin" = "any", extraAudiences: string[] = [], options: { needEmail?: boolean } = {}): Promise<AuthContext> {
+  const pre = mcpCalls.get(event);
+  if (pre) {
+    if (minimum === "admin" && pre.auth.role === "investor") throw new Error("Administrator role required");
+    return pre.auth;
+  }
   const raw = event.headers.authorization || event.headers.Authorization;
   if (!raw?.startsWith("Bearer ")) throw new Error("Authentication required");
   const token = raw.slice(7).trim();
@@ -78,6 +101,9 @@ export async function requireAuth(event: APIGatewayProxyEventV2, minimum: "any" 
   let verified: JWTPayload = {};
   // The token alone says "investor": confirm with Auth0 before settling on that.
   if (role === "investor") { verified = await verifiedEmailFromAuth0(token, payload.exp); role = resolveRole({ ...payload, ...verified }); }
+  // The MCP allow-list needs a verified email even when the role claim alone was enough.
+  if (options.needEmail && !verified.email && !(payload.email_verified === true && typeof payload.email === "string") && typeof payload["https://deeptrack.io/verified_email"] !== "string")
+    verified = await verifiedEmailFromAuth0(token, payload.exp);
   if (minimum === "admin" && role === "investor") throw new Error("Administrator role required");
   const clearanceTier: ClearanceTier = role === "investor" ? 1 : 3;
   const verifiedEmail = typeof verified.email === "string" ? verified.email

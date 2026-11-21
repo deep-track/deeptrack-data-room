@@ -2,9 +2,9 @@ import { CalendarClock, FileSpreadsheet, Plus, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { investorApi, investorsFromSpreadsheet, type ImportResult, type Investor, type InvestorActivity, type InvestorInput, type InvestorOptions } from "../lib/investors";
 
-const ACTIVE_ORDER = ["Not started", "Drafted", "Check", "Intro requested", "Waiting reply", "Meeting booked", "Due diligence", "Term sheet", "Closed won"];
-const CLOSED = ["Closed won", "Passed", "Do not contact"];
-const SIDE = ["Watch", "On hold", "Passed", "Do not contact"];
+const ACTIVE_ORDER = ["Intro pending", "Contacted", "Replied", "Deck sent", "Meeting booked", "Diligence", "Committed", "Closed"];
+const CLOSED = ["Closed", "Passed", "Banned"];
+const SIDE = ["Reconnect later", "Passed", "Banned"];
 const AFRICA = /africa|nairobi|kenya|lagos|nigeria|ghana|accra|kigali|rwanda|dakar|senegal|cairo|egypt|johannesburg|cape town|south africa|uganda|tanzania|ethiopia|morocco|pan-african/i;
 type Filter = "all" | "high" | "africa" | "due";
 const FILTERS: [Filter, string][] = [["all", "All"], ["high", "High priority"], ["africa", "Africa"], ["due", "Follow-up due"]];
@@ -16,6 +16,8 @@ function shortDate(iso: string | null) { return iso ? new Intl.DateTimeFormat("e
 function when(iso: string) { return new Intl.DateTimeFormat("en", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(iso)); }
 function sentence(status: string) { return status.charAt(0) + status.slice(1).toLowerCase(); }
 function isOpen(investor: Investor) { return !CLOSED.includes(investor.status); }
+// Banned or do-not-contact: the API refuses every change except the stage.
+function isBlocked(investor: Investor) { return investor.status === "Banned" || (investor.tags ?? []).includes("do-not-contact"); }
 function followUpDue(investor: Investor, horizon: string) { return isOpen(investor) && !!investor.nextFollowUp && investor.nextFollowUp <= horizon; }
 function subtitle(investor: Investor) { return [investor.type, investor.stageFocus, investor.geography].filter(Boolean).join(" · ") || "No details yet"; }
 function hostOf(url: string | null) { try { return url ? new URL(url).host.replace(/^www\./, "") : null; } catch { return url; } }
@@ -55,8 +57,8 @@ export function InvestorPipeline() {
   }), [sorted, filter, query, horizon]);
 
   const engagedFrom = ACTIVE_ORDER.indexOf("Meeting booked");
-  const engaged = investors.filter((i) => { const at = ACTIVE_ORDER.indexOf(i.status); return at >= engagedFrom && i.status !== "Closed won"; }).length;
-  const contacted = investors.filter((i) => ["Check", "Intro requested", "Waiting reply"].includes(i.status)).length;
+  const engaged = investors.filter((i) => { const at = ACTIVE_ORDER.indexOf(i.status); return at >= engagedFrom && i.status !== "Closed"; }).length;
+  const contacted = investors.filter((i) => ["Contacted", "Replied", "Deck sent"].includes(i.status)).length;
   const high = investors.filter((i) => i.priority === "High" && isOpen(i));
   const due = investors.filter((i) => followUpDue(i, horizon));
   const overdue = due.filter((i) => (i.nextFollowUp ?? "") < now).length;
@@ -159,7 +161,8 @@ function InvestorDrawer({ investor, options, onClose, onSaved }: { investor: Inv
   const input = (key: Editable, label: string, type = "text", extra: Record<string, string> = {}) => <label className="field">{label}<input type={type} value={draft[key]} onChange={set(key)} {...extra} /></label>;
   return <aside className="drawer investor-drawer" role="dialog" aria-modal="true" aria-labelledby="investor-title">
     <button className="drawer-close" onClick={onClose}><X size={18} /> Close</button>
-    <p className="eyebrow">{[investor.ref, investor.type].filter(Boolean).join(" · ")}</p>
+    <p className="eyebrow">{[investor.ref, investor.type, investor.organisation].filter(Boolean).join(" · ")}</p>
+    {isBlocked(investor) && <p className="error-banner" role="note">{investor.status === "Banned" ? "Banned" : "Do not contact"}: only the stage can be changed.</p>}
     <h2 id="investor-title">{investor.name}</h2>
     <p className="drawer-sub">{[investor.stageFocus, investor.sectorFocus, investor.geography, hostOf(investor.website)].filter(Boolean).join(" · ")}</p>
     <form onSubmit={save}>
@@ -193,7 +196,7 @@ function LogMeeting({ investorId, onDone }: { investorId: string; onDone: (resul
     catch (cause) { setError(message(cause, "Could not log this.")); } finally { setBusy(false); }
   }
   return <form className="log-form" onSubmit={submit}>
-    <div className="field-row"><label className="field">Type<select value={kind} onChange={(e) => setKind(e.target.value)}><option value="meeting">Meeting</option><option value="call">Call</option><option value="email">Email</option><option value="note">Note</option></select></label><label className="field">Date<input type="date" value={date} onChange={(e) => setDate(e.target.value)} max={today()} /></label></div>
+    <div className="field-row"><label className="field">Type<select value={kind} onChange={(e) => setKind(e.target.value)}><option value="meeting">Meeting</option><option value="call">Call</option><option value="email">Email</option><option value="note">Note</option><option value="form">Form</option><option value="intro">Intro</option></select></label><label className="field">Date<input type="date" value={date} onChange={(e) => setDate(e.target.value)} max={today()} /></label></div>
     <label className="field">What happened<textarea rows={3} value={summary} onChange={(e) => setSummary(e.target.value)} required /></label>
     {error && <p className="form-error" role="alert">{error}</p>}
     <button className="primary-button" type="submit" disabled={busy || !summary.trim()}>{busy ? "Saving…" : "Add to history"}</button>
@@ -201,7 +204,7 @@ function LogMeeting({ investorId, onDone }: { investorId: string; onDone: (resul
 }
 
 function AddInvestorDialog({ options, onClose, onCreated }: { options: InvestorOptions; onClose: () => void; onCreated: (investor: Investor) => void }) {
-  const [form, setForm] = useState({ name: "", type: "VC", stageFocus: "", geography: "", website: "", priority: "Medium", status: "Not started", nextAction: "" });
+  const [form, setForm] = useState({ name: "", type: "VC", stageFocus: "", geography: "", website: "", priority: "Medium", status: "Intro pending", nextAction: "" });
   const [busy, setBusy] = useState(false); const [error, setError] = useState("");
   const set = (key: keyof typeof form) => (event: { target: { value: string } }) => setForm((f) => ({ ...f, [key]: event.target.value }));
   async function submit(event: FormEvent) {
@@ -214,7 +217,7 @@ function AddInvestorDialog({ options, onClose, onCreated }: { options: InvestorO
     <form onSubmit={submit}>
       <div className="form-grid">
         <label>Investor / fund<input value={form.name} onChange={set("name")} required autoFocus /></label>
-        <label>Type<input value={form.type} onChange={set("type")} list="investor-types" /></label>
+        <label>Type<select value={form.type} onChange={set("type")}>{(options.types ?? ["VC"]).map((t) => <option key={t} value={t}>{t}</option>)}</select></label>
         <label>Stage focus<input value={form.stageFocus} onChange={set("stageFocus")} placeholder="Seed, Series A…" /></label>
         <label>Geography<input value={form.geography} onChange={set("geography")} /></label>
         <label>Website<input value={form.website} onChange={set("website")} placeholder="https://" /></label>
@@ -222,7 +225,6 @@ function AddInvestorDialog({ options, onClose, onCreated }: { options: InvestorO
         <label>Stage<select value={form.status} onChange={set("status")}>{options.statuses.map((s) => <option key={s} value={s}>{sentence(s)}</option>)}</select></label>
         <label>Next action<input value={form.nextAction} onChange={set("nextAction")} /></label>
       </div>
-      <datalist id="investor-types">{["VC", "Angel", "Family Office", "Corporate VC", "Private Equity", "Accelerator/Incubator", "Strategic Investor", "Sovereign Wealth Fund"].map((t) => <option key={t} value={t} />)}</datalist>
       {error && <p className="form-error" role="alert">{error}</p>}
       <div className="dialog-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button><button className="primary-button" type="submit" disabled={busy || !form.name.trim()}>{busy ? "Adding…" : "Add investor"}</button></div>
     </form>
