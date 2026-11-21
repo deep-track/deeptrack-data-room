@@ -1,12 +1,13 @@
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from "aws-lambda";
 import { randomUUID } from "node:crypto";
-import { requireAuth } from "./auth.js";
+import { mcpCallOf, requireAuth } from "./auth.js";
 import { sendInvitationEmail } from "./email.js";
 import { acknowledgeNda, inviteInvestor, getGrant, setGrantTier, ensureBaseSchema, addDocumentVersion, getActiveGrant, getDocument, insertAudit, insertDocument, listAccessGrants, listApprovedDocuments, listAuditEvents, markUploadIntentConsumed, query, revokeAccessGrant, updateDocumentStatus, upsertAccessGrant, withTransaction } from "./db.js";
 import { createDownloadUrl, createUploadUrl, validateUpload } from "./storage.js";
 import { isFolder, isVersionLabel } from "./taxonomy.js";
 import { handleMcp, mcpResource, protectedResourceMetadata } from "./mcp.js";
-import { addActivity, createInvestor, getInvestor, importInvestors, InvestorInputError, listInvestors, updateInvestor } from "./investors.js";
+import { addActivity, bulkImport, createInvestor, getInvestor, importInvestors, InvestorInputError, listInvestors, moveStage, updateInvestor, type Change } from "./investors.js";
+import { dataRoomActivity, pipelineSummary, RateLimitError, todayIn } from "./pipeline.js";
 
 const headers = {
   "content-type": "application/json",
@@ -19,8 +20,14 @@ const headers = {
 function response(statusCode: number, body: unknown): APIGatewayProxyResultV2 { return { statusCode, headers, body: JSON.stringify(body) }; }
 function jsonBody(event: APIGatewayProxyEventV2) { try { return event.body ? JSON.parse(event.isBase64Encoded ? Buffer.from(event.body, "base64").toString("utf8") : event.body) : {}; } catch { throw new Error("Request body must be valid JSON"); } }
 function clientMeta(event: APIGatewayProxyEventV2) { return { ip: event.requestContext.http.sourceIp, userAgent: event.headers["user-agent"] || event.headers["User-Agent"] }; }
-function errorResponse(error: unknown) { if (error instanceof InvestorInputError) return response(400, { error: error.message }); const message = error instanceof Error ? error.message : "Request failed"; const auth = /Authentication|required|role|Authenticated|forbidden|NDA|grant|clearance|expired|revoked/i.test(message); return response(auth ? 403 : 500, { error: auth ? message : "Data-room service unavailable" }); }
+function errorResponse(error: unknown) { if (error instanceof RateLimitError) return { statusCode: 429, headers: { ...headers, "retry-after": String(error.retryAfterSeconds) }, body: JSON.stringify({ error: error.message }) }; if (error instanceof InvestorInputError) return response(400, { error: error.message }); const message = error instanceof Error ? error.message : "Request failed"; const auth = /Authentication|required|role|Authenticated|forbidden|NDA|grant|clearance|expired|revoked/i.test(message); return response(auth ? 403 : 500, { error: auth ? message : "Data-room service unavailable" }); }
 function idFrom(path: string, pattern: RegExp) { const match = path.match(pattern); return match?.[1]; }
+// Investor write audit entry: who (actor columns), when (created_at), how (web or MCP tool) and before → after.
+function cut(value: unknown) { const text = typeof value === "string" ? value : JSON.stringify(value ?? null); return text.length > 300 ? `${text.slice(0, 297)}…` : text; }
+function writeDetail(event: APIGatewayProxyEventV2, investor: unknown, diff: Change[] = [], extra: Record<string, unknown> = {}) {
+  const mcp = mcpCallOf(event);
+  return JSON.stringify({ via: mcp ? "mcp" : "web", tool: mcp?.tool, investor, ...extra, changes: diff.map((c) => ({ field: c.field, before: cut(c.before), after: cut(c.after) })) });
+}
 
 export async function handler(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> {
   try {
@@ -187,31 +194,55 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 
     // Private investor pipeline: Founder and Investor Relations only (adminRoute above).
     if (path === "/investors" && method === "GET") return response(200, await listInvestors());
+    if (path === "/investors/summary" && method === "GET") {
+      const today = event.queryStringParameters?.today;
+      return response(200, await pipelineSummary(today && /^\d{4}-\d{2}-\d{2}$/.test(today) ? today : todayIn()));
+    }
+    if (path === "/investors/data-room-activity" && method === "GET") {
+      const q = event.queryStringParameters ?? {};
+      return response(200, await dataRoomActivity(String(q.since || ""), q.includeAdmins === "true"));
+    }
     if (path === "/investors" && method === "POST") {
       const investor = await createInvestor(jsonBody(event) as Record<string, unknown>, auth);
-      await insertAudit({ event: "investor_created", actorSubject: auth.subject, actorEmail: auth.email, detail: `investor=${investor.ref}`, ...meta, createdAt: new Date().toISOString() });
+      const created = Object.entries(investor).filter(([k, v]) => v !== null && !["id", "createdAt", "updatedAt", "ref"].includes(k) && !(Array.isArray(v) && !v.length)).map(([field, after]) => ({ field, before: null, after }) as Change);
+      await insertAudit({ event: "investor_created", actorSubject: auth.subject, actorEmail: auth.email, detail: writeDetail(event, investor.ref, created), ...meta, createdAt: new Date().toISOString() });
       return response(201, investor);
     }
     if (path === "/investors/import" && method === "POST") {
       const result = await importInvestors(jsonBody(event) as Record<string, unknown>, auth);
-      await insertAudit({ event: "investors_imported", actorSubject: auth.subject, actorEmail: auth.email, detail: `created=${result.created};skipped=${result.skipped}`, ...meta, createdAt: new Date().toISOString() });
+      await insertAudit({ event: "investors_imported", actorSubject: auth.subject, actorEmail: auth.email, detail: writeDetail(event, null, [], { created: result.createdNames, skipped: result.skipped }), ...meta, createdAt: new Date().toISOString() });
+      return response(200, result);
+    }
+    if (path === "/investors/bulk" && method === "POST") {
+      const result = await bulkImport(jsonBody(event) as Record<string, unknown>, auth);
+      if (result.committed) await insertAudit({ event: "investors_bulk_imported", actorSubject: auth.subject, actorEmail: auth.email, detail: writeDetail(event, null, [], { creates: result.creates, updates: result.updates, conflicts: result.conflicts, rows: result.rows.filter((r) => r.action === "create" || r.action === "update").map((r) => ({ action: r.action, investor: r.investor, changes: r.changes })) }), ...meta, createdAt: new Date().toISOString() });
+      return response(200, result);
+    }
+    const stageId = idFrom(path, /^\/investors\/([^/]+)\/stage$/);
+    if (stageId && method === "POST") {
+      const body = jsonBody(event) as Record<string, unknown>;
+      const result = await moveStage(stageId, body, auth);
+      if (!result) return response(404, { error: "Investor not found" });
+      if (result.diff.length) await insertAudit({ event: "investor_stage_changed", actorSubject: auth.subject, actorEmail: auth.email, detail: writeDetail(event, result.investor.ref, result.diff, { reason: body.reason ?? null }), ...meta, createdAt: new Date().toISOString() });
       return response(200, result);
     }
     const investorActivityId = idFrom(path, /^\/investors\/([^/]+)\/activity$/);
     if (investorActivityId && method === "POST") {
-      if (!(await addActivity(investorActivityId, jsonBody(event) as Record<string, unknown>, auth))) return response(404, { error: "Investor not found" });
-      await insertAudit({ event: "investor_activity_logged", actorSubject: auth.subject, actorEmail: auth.email, detail: `investor=${investorActivityId}`, ...meta, createdAt: new Date().toISOString() });
-      return response(201, await getInvestor(investorActivityId));
+      const result = await addActivity(investorActivityId, jsonBody(event) as Record<string, unknown>, auth);
+      if (!result) return response(404, { error: "Investor not found" });
+      const after = await getInvestor(investorActivityId, 20);
+      await insertAudit({ event: "investor_activity_logged", actorSubject: auth.subject, actorEmail: auth.email, detail: writeDetail(event, after?.investor.ref, result.diff, { activity: result.activity }), ...meta, createdAt: new Date().toISOString() });
+      return response(201, after);
     }
     const investorId = idFrom(path, /^\/investors\/([^/]+)$/);
     if (investorId && method === "GET") {
-      const result = await getInvestor(investorId);
+      const result = await getInvestor(investorId, Number(event.queryStringParameters?.activityLimit || 100));
       return result ? response(200, result) : response(404, { error: "Investor not found" });
     }
     if (investorId && method === "POST") {
       const result = await updateInvestor(investorId, jsonBody(event) as Record<string, unknown>, auth);
       if (!result) return response(404, { error: "Investor not found" });
-      if (result.changes.length) await insertAudit({ event: "investor_updated", actorSubject: auth.subject, actorEmail: auth.email, detail: `investor=${investorId};fields=${result.changes.length}`, ...meta, createdAt: new Date().toISOString() });
+      if (result.diff.length) await insertAudit({ event: "investor_updated", actorSubject: auth.subject, actorEmail: auth.email, detail: writeDetail(event, result.investor.ref, result.diff), ...meta, createdAt: new Date().toISOString() });
       return response(200, { ...result, ...(await getInvestor(investorId)) });
     }
 
@@ -231,5 +262,9 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     }
 
     return response(404, { error: "Not found" });
-  } catch (error) { console.error("data-room-api-error", error instanceof Error ? error.message : "unknown"); return errorResponse(error); }
+  } catch (error) {
+    // Input mistakes (they name investors) and rate limits are expected; only log real failures.
+    if (!(error instanceof InvestorInputError) && !(error instanceof RateLimitError)) console.error("data-room-api-error", error instanceof Error ? error.message : "unknown");
+    return errorResponse(error);
+  }
 }

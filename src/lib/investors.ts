@@ -10,9 +10,10 @@ export type Investor = {
   dataRoomShared: string | null; deckSent: string | null; ndaSigned: string | null; meeting1: string | null; meeting2: string | null;
   dueDiligence: string | null; decision: string | null; probability: number | null; expectedClose: string | null;
   notes: string | null; introAngle: string | null; createdAt: string; updatedAt: string;
+  organisation: string | null; lastTouchBy: "bryan" | "investor" | null; hook: string | null; sourceUrl: string | null; tags: string[];
 };
 export type InvestorInput = Partial<Omit<Investor, "id" | "createdAt" | "updatedAt">>;
-export type InvestorOptions = { statuses: string[]; priorities: string[]; interest: string[]; yesNo: string[] };
+export type InvestorOptions = { statuses: string[]; types?: string[]; rounds?: string[]; activityKinds?: string[]; priorities: string[]; interest: string[]; yesNo: string[] };
 export type InvestorActivity = { id: string; kind: string; summary: string; actor: string | null; at: string };
 export type ImportResult = { created: number; skipped: number; createdNames: string[]; skippedNames: string[] };
 
@@ -48,11 +49,11 @@ function text(cell: Cell | undefined) { const value = cell === null || cell === 
 
 // The old Fundraising CRM template used different stage names; translate them.
 const TEMPLATE_STAGES: Record<string, string> = {
-  "prospect identified": "Not started", "research complete": "Not started", "warm intro requested": "Intro requested",
-  "outreach sent": "Waiting reply", "reply received": "Waiting reply", "pitch deck sent": "Waiting reply",
+  "prospect identified": "Intro pending", "research complete": "Intro pending", "warm intro requested": "Intro pending",
+  "outreach sent": "Contacted", "reply received": "Replied", "pitch deck sent": "Deck sent",
   "intro call scheduled": "Meeting booked", "intro call complete": "Meeting booked", "pitch meeting scheduled": "Meeting booked",
-  "pitch meeting complete": "Meeting booked", "partner meeting": "Meeting booked", "due diligence": "Due diligence",
-  "term sheet received": "Term sheet", "closed won": "Closed won", "closed lost": "Passed", "passed": "Passed", "on hold": "On hold",
+  "pitch meeting complete": "Meeting booked", "partner meeting": "Meeting booked", "due diligence": "Diligence",
+  "term sheet received": "Committed", "closed won": "Closed", "closed lost": "Passed", "passed": "Passed", "on hold": "Reconnect later",
 };
 
 function fromTemplate(grid: Cell[][], headerRow: number): InvestorInput[] {
@@ -106,7 +107,7 @@ function fromInvestorList(grid: Cell[][], headerRow: number): InvestorInput[] {
       sectorFocus: get(line, "thesis") || null,
       warmIntroSource: get(line, "route / contact") || null,
       priority: !Number.isFinite(fit) || fit <= 0 ? null : fit >= 4 ? "High" : fit === 3 ? "Medium" : "Low",
-      status: stage || "Not started",
+      status: stage || "Intro pending",
       nextAction: nextStep && !/^none$/i.test(nextStep) ? nextStep : null,
       nextFollowUp: nextDate,
       introAngle: get(line, "why") || null,

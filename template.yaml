@@ -29,6 +29,15 @@ Parameters:
     Default: subnet-0ef55fe8d1f2bfb37,subnet-0747ba5733e95bb53
     Description: Private subnets in deeptrack-vpc (routed through the NAT gateway) so the Lambda can reach the private Postgres and Auth0.
 
+  McpAllowedEmails:
+    Type: String
+    Default: ''
+    Description: Extra emails (comma-separated) allowed to use the Claude connector, on top of the two built into backend/src/auth.ts.
+  McpResourceUrl:
+    Type: String
+    Default: ''
+    Description: Public MCP URL if it is not the API Gateway URL, e.g. https://investors.deeptrack.io/api/mcp. Must equal the Auth0 API identifier.
+
 Conditions:
   HasCustomBucketName: !Not [!Equals [!Ref DataRoomS3BucketName, '']]
 
@@ -48,6 +57,8 @@ Globals:
         DATABASE_SSL: 'true'
         INVITE_FROM: Deeptrack Data Room <investors@deeptrack.io>
         DATA_ROOM_MAX_FILE_BYTES: '10485760'
+        MCP_ALLOWED_EMAILS: !Ref McpAllowedEmails
+        MCP_RESOURCE_URL: !Ref McpResourceUrl
 
 Resources:
   DataRoomHttpApi:
@@ -146,6 +157,9 @@ Resources:
         InvestorActivityPost:
           Type: HttpApi
           Properties: { ApiId: !Ref DataRoomHttpApi, Path: "/investors/{id}/activity", Method: POST }
+        InvestorStage:
+          Type: HttpApi
+          Properties: { ApiId: !Ref DataRoomHttpApi, Path: "/investors/{id}/stage", Method: POST }
         # MCP connector for Claude (see backend/src/mcp.ts).
         McpPost:
           Type: HttpApi
