@@ -6,6 +6,7 @@ import { acknowledgeNda, inviteInvestor, getGrant, setGrantTier, ensureBaseSchem
 import { createDownloadUrl, createUploadUrl, validateUpload } from "./storage.js";
 import { isFolder, isVersionLabel } from "./taxonomy.js";
 import { handleMcp, mcpResource, protectedResourceMetadata } from "./mcp.js";
+import { authorizationServerMetadata, authorize, callback, oauthBase, register, revoke, token } from "./oauth.js";
 import { addActivity, bulkImport, createInvestor, getInvestor, importInvestors, InvestorInputError, listInvestors, moveStage, updateInvestor, type Change } from "./investors.js";
 import { dataRoomActivity, pipelineSummary, RateLimitError, todayIn } from "./pipeline.js";
 
@@ -38,6 +39,14 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     // MCP connector for Claude (Founder and Investor Relations only; see mcp.ts).
     if (path.startsWith("/.well-known/oauth-protected-resource") && method === "GET") return protectedResourceMetadata(event);
     if (path === "/mcp") return handleMcp(event, handler);
+    // Sign-in for the connector, so Claude needs only the URL (see oauth.ts).
+    const base = oauthBase(mcpResource(event));
+    if (path.startsWith("/.well-known/oauth-authorization-server") && method === "GET") return authorizationServerMetadata(base);
+    if (path === "/oauth/register" && method === "POST") return register(event);
+    if (path === "/oauth/authorize" && method === "GET") return authorize(event, base);
+    if (path === "/oauth/callback" && method === "GET") return callback(event, base);
+    if (path === "/oauth/token" && method === "POST") return token(event);
+    if (path === "/oauth/revoke" && method === "POST") return revoke(event);
 
     const adminRoute = (method === "POST" && (path === "/uploads" || path === "/documents" || path === "/access/grants")) || (method === "GET" && (path === "/access/grants" || path === "/audit")) || (method === "POST" && /^\/access\/grants\/[^/]+\/(revoke|tier|email)$/.test(path)) || (method === "POST" && /^\/documents\/[^/]+\/(status|versions)$/.test(path)) || path === "/investors" || path.startsWith("/investors/");
     const auth = await requireAuth(event, adminRoute ? "admin" : "any", [mcpResource(event)]);

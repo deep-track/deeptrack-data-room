@@ -170,6 +170,27 @@ Resources:
         McpResourceMetadata:
           Type: HttpApi
           Properties: { ApiId: !Ref DataRoomHttpApi, Path: /.well-known/oauth-protected-resource, Method: GET }
+        OAuthServerMetadata:
+          Type: HttpApi
+          Properties: { ApiId: !Ref DataRoomHttpApi, Path: /.well-known/oauth-authorization-server, Method: GET }
+        OAuthServerMetadataPath:
+          Type: HttpApi
+          Properties: { ApiId: !Ref DataRoomHttpApi, Path: /.well-known/oauth-authorization-server/mcp, Method: GET }
+        OAuthRegister:
+          Type: HttpApi
+          Properties: { ApiId: !Ref DataRoomHttpApi, Path: /oauth/register, Method: POST }
+        OAuthAuthorize:
+          Type: HttpApi
+          Properties: { ApiId: !Ref DataRoomHttpApi, Path: /oauth/authorize, Method: GET }
+        OAuthCallback:
+          Type: HttpApi
+          Properties: { ApiId: !Ref DataRoomHttpApi, Path: /oauth/callback, Method: GET }
+        OAuthToken:
+          Type: HttpApi
+          Properties: { ApiId: !Ref DataRoomHttpApi, Path: /oauth/token, Method: POST }
+        OAuthRevoke:
+          Type: HttpApi
+          Properties: { ApiId: !Ref DataRoomHttpApi, Path: /oauth/revoke, Method: POST }
         McpResourceMetadataPath:
           Type: HttpApi
           Properties: { ApiId: !Ref DataRoomHttpApi, Path: /.well-known/oauth-protected-resource/mcp, Method: GET }

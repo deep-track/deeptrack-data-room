@@ -3,7 +3,8 @@
 // allow-list (auth.ts) may use it. Every tool runs through the same API route the
 // web app uses, so validation, Banned/do-not-contact rules and the audit log are identical.
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from "aws-lambda";
-import { authIssuer, markMcpCall, mcpAllowedEmails, requireAuth } from "./auth.js";
+import { markMcpCall, mcpAllowedEmails, requireAuth } from "./auth.js";
+import { isConnectorToken, oauthBase, verifyConnectorToken } from "./oauth.js";
 import { ACTIVITY_KINDS, ROUNDS, STATUSES, TOUCH_BY, TYPES } from "./investors.js";
 import { rateLimit, RateLimitError } from "./pipeline.js";
 import { FOLDER_KEYS } from "./taxonomy.js";
@@ -29,9 +30,10 @@ function metadataUrl(event: APIGatewayProxyEventV2) {
   return `${resource.replace(/\/mcp$/, "")}/.well-known/oauth-protected-resource`;
 }
 
-// RFC 9728 protected-resource metadata: tells Claude to sign in with Auth0.
+// RFC 9728 protected-resource metadata: Claude signs in through the data room's own
+// authorization server (oauth.ts), which hands off to Auth0 for Google sign-in.
 export function protectedResourceMetadata(event: APIGatewayProxyEventV2): APIGatewayProxyResultV2 {
-  return { statusCode: 200, headers: jsonHeaders, body: JSON.stringify({ resource: mcpResource(event), authorization_servers: [authIssuer()], scopes_supported: SCOPES, bearer_methods_supported: ["header"], resource_name: "Deeptrack data room" }) };
+  return { statusCode: 200, headers: jsonHeaders, body: JSON.stringify({ resource: mcpResource(event), authorization_servers: [oauthBase(mcpResource(event))], scopes_supported: SCOPES, bearer_methods_supported: ["header"], resource_name: "Deeptrack data room" }) };
 }
 
 function unauthorized(event: APIGatewayProxyEventV2, status: 401 | 403, message: string): APIGatewayProxyResultV2 {
@@ -300,8 +302,17 @@ export async function handleMcp(event: APIGatewayProxyEventV2, api: Handler): Pr
   const header = event.headers.authorization || event.headers.Authorization;
   if (!header?.startsWith("Bearer ")) return unauthorized(event, 401, "Sign in required");
   let auth: AuthContext;
-  try { auth = await requireAuth(event, "any", [mcpResource(event)], { needEmail: true }); }
-  catch { return unauthorized(event, 401, "Sign-in expired or invalid"); }
+  const bearer = header.slice(7).trim();
+  if (isConnectorToken(bearer)) {
+    // Token issued by the data room's own sign-in (Claude added with just the URL).
+    const found = await verifyConnectorToken(bearer);
+    if (!found) return unauthorized(event, 401, "Sign-in expired or invalid");
+    auth = found;
+  } else {
+    // Auth0 token (connector added with the Auth0 Client ID and secret under Advanced settings).
+    try { auth = await requireAuth(event, "any", [mcpResource(event)], { needEmail: true }); }
+    catch { return unauthorized(event, 401, "Sign-in expired or invalid"); }
+  }
   if (!auth.verifiedEmail || !mcpAllowedEmails().includes(auth.verifiedEmail)) {
     console.warn("mcp-access-denied", auth.subject);
     return unauthorized(event, 403, "This connector is limited to Deeptrack's approved admins. Ask Bryan to add your email to MCP_ALLOWED_EMAILS.");
