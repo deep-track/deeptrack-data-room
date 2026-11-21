@@ -31,12 +31,12 @@ Read the following documents before deployment:
 The data room includes an MCP connector. With it, Claude can read the investor pipeline (stages, overdue next steps, upcoming meetings, data room views) and, after you approve, update it (add investors, log emails, calls and meetings, move stages, set next steps, bulk import). Full details are in [`docs/MCP.md`](docs/MCP.md).
 
 - **Connector URL:** `https://9a8681dr9d.execute-api.eu-west-1.amazonaws.com/mcp`. It becomes `https://investors.deeptrack.io/api/mcp` once the CloudFront step in `docs/MCP.md` is done.
-- **Add it:** Claude → Settings → Connectors → Add custom connector. Paste the URL, then put the "Claude data room connector" Auth0 Client ID and secret under Advanced settings, and sign in with Google.
+- **Add it:** Claude → Settings → Connectors → Add custom connector. Paste the URL, click Connect, and sign in with Google. No Client ID or secret is needed, same as the CRM.
 - **Who can sign in:** only the two founder accounts built into `backend/src/auth.ts` (`DEFAULT_MCP_EMAILS`), plus emails in the `McpAllowedEmails` stack parameter. Other accounts, including other data room admins, get 403.
 - **Revoke access:**
   - One person: remove their email from `McpAllowedEmails` and deploy.
-  - One connection: disconnect it in Claude's Connectors settings, or revoke the app for that user in Auth0.
-  - Everyone: rotate or disable the "Claude data room connector" application in Auth0.
+  - One connection: disconnect it in Claude's Connectors settings.
+  - Everyone: run `UPDATE data_room_oauth_tokens SET revoked_at = now()` on the database.
 - **Safety:**
   - Banned and do-not-contact investors refuse every write except a stage change.
   - Bulk imports are a dry run unless committed.

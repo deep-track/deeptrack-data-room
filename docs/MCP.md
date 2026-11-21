@@ -10,8 +10,10 @@ briefs read it instead of rebuilding a table from email.
 - **URL after the CloudFront step below:** `https://investors.deeptrack.io/api/mcp`
 - **Who can use it:** only the allow-list (see "Who can sign in"). Everyone else gets 403,
   including other data room admins.
-- **Sign-in:** Auth0, the same tenant as the web app, through a pre-registered client.
-  Claude never sees a password.
+- **Sign-in:** add the URL in Claude and click Connect, like the Deeptrack CRM. The data room
+  runs its own small sign-in service for Claude (`backend/src/oauth.ts`). It hands off to Auth0
+  (the web app's Google sign-in) and then issues its own tokens. Claude never sees a password,
+  and no Client ID or secret is needed.
 - **Same rules as the web app:** every tool runs through the API route the web app
   uses, so validation, the Banned / do-not-contact rule and the audit log are identical.
 
@@ -97,10 +99,22 @@ acts as an administrator inside the connector only.
 Use **Settings → Connectors → Add custom connector**. This works in claude.ai, Cowork and the
 desktop app.
 
-1. Name it "Deeptrack data room" and set the URL above.
-2. Under **Advanced settings**, paste the Client ID and Client Secret of the Auth0 application
-   "Claude data room connector" (see the setup below). Keep the secret out of chat and git.
-3. Click **Connect** and sign in with Google using an allow-listed account.
+1. Name it "Deeptrack data room" and paste the URL above. Leave Advanced settings empty.
+2. Click **Connect** and sign in with Google using an allow-listed account.
+
+Behind the scenes:
+- Claude registers itself (only Claude's own callback addresses are accepted).
+- Google sign-in goes through Auth0 with PKCE.
+- The data room checks the allow-list and issues an access token (1 hour) and a refresh token
+  (30 days, rotated on each use).
+- Tokens are stored only as hashes.
+- Removing an email from the allow-list stops its refreshes and new sign-ins.
+
+**One-time Auth0 step:** the web app's Auth0 application ("Deeptrack Data Room",
+client `2nsfWPfcCPkxA3N7Me4aUwjlSsDeoFbM`) must list
+`https://9a8681dr9d.execute-api.eu-west-1.amazonaws.com/oauth/callback` under Allowed Callback URLs.
+
+The older route, an Auth0 Client ID and secret under Advanced settings, still works.
 
 **Claude Code:**
 

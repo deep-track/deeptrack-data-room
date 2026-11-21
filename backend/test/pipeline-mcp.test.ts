@@ -15,6 +15,7 @@ const MCP_URL = "https://mcp.test/mcp";
 const API_AUDIENCE = "https://api.test/data-room";
 const PG_PORT = 55400 + Math.floor(Math.random() * 500);
 const EXTRA_ADMIN = "extra.admin@example.test";
+const LOGIN_CLIENT = "test-login-client";
 
 let pg: EmbeddedPostgres;
 let auth0: Server;
@@ -43,6 +44,18 @@ before(async () => {
       const claims = JSON.parse(Buffer.from(token.split(".")[1] ?? "", "base64url").toString() || "{}");
       res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ email: claims["test/email"], email_verified: true })); return;
     }
+    if (req.url === "/oauth/token" && req.method === "POST") {
+      // Stand-in for Auth0's code exchange: the test's "code" is "<email>::<nonce>".
+      let raw = ""; req.on("data", (c) => { raw += c; }); req.on("end", async () => {
+        const body = JSON.parse(raw || "{}") as { code?: string; client_id?: string; code_verifier?: string };
+        const [email, nonce] = String(body.code ?? "").split("::");
+        if (body.client_id !== LOGIN_CLIENT || !body.code_verifier || !email) { res.statusCode = 400; res.end(JSON.stringify({ error: "invalid_grant" })); return; }
+        const idToken = await new SignJWT({ email, email_verified: true, nonce, name: "Test Person" }).setProtectedHeader({ alg: "RS256", kid: "test" })
+          .setSubject(`google-oauth2|${email}`).setIssuer(`${issuer}/`).setAudience(LOGIN_CLIENT).setIssuedAt().setExpirationTime("5m").sign(key);
+        res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ id_token: idToken }));
+      });
+      return;
+    }
     res.statusCode = 404; res.end();
   });
   await new Promise<void>((r) => auth0.listen(0, "127.0.0.1", r));
@@ -52,6 +65,7 @@ before(async () => {
     AUTH0_ISSUER: issuer, AUTH0_AUDIENCE: API_AUDIENCE, MCP_RESOURCE_URL: MCP_URL,
     DATABASE_URL: `postgresql://postgres:test@127.0.0.1:${PG_PORT}/postgres`, DATABASE_SSL: "false",
     MCP_ALLOWED_EMAILS: EXTRA_ADMIN, MCP_RATE_LIMIT_PER_MINUTE: "10000", MCP_WRITE_LIMIT_PER_MINUTE: "10000",
+    AUTH0_LOGIN_CLIENT_ID: LOGIN_CLIENT,
   });
   ({ handler } = await import("../src/handler.js") as never);
   pipeline = await import("../src/pipeline.js");
@@ -361,5 +375,94 @@ describe("pure helpers", () => {
       { ref: "C", name: "C", status: "Passed", lastContact: "2026-01-01", tags: [] },
     ], "2026-11-20");
     assert.deepEqual(s.stale.investors.map((i) => i.ref), ["A"]);
+  });
+});
+
+describe("connector sign-in with just the URL (like the CRM)", () => {
+  const CLAUDE_CB = "https://claude.ai/api/mcp/auth_callback";
+  const b64 = (buf: Buffer) => buf.toString("base64url");
+  const sha = async (s: string) => b64((await import("node:crypto")).createHash("sha256").update(s).digest());
+  const form = (p: Record<string, string>) => ({ body: new URLSearchParams(p).toString() });
+  async function call(method: string, path: string, opts: { query?: Record<string, string>; body?: string; json?: unknown } = {}) {
+    const e = event(method, path, { query: opts.query });
+    if (opts.json !== undefined) { e.body = JSON.stringify(opts.json); e.headers["content-type"] = "application/json"; }
+    if (opts.body !== undefined) { e.body = opts.body; e.headers["content-type"] = "application/x-www-form-urlencoded"; }
+    return handler(e);
+  }
+  // Full flow as Claude runs it: register → authorize → (Auth0) → callback → token.
+  async function connect(email: string) {
+    const reg = await call("POST", "/oauth/register", { json: { client_name: "Claude", redirect_uris: [CLAUDE_CB], token_endpoint_auth_method: "none" } });
+    assert.equal(reg.statusCode, 201);
+    const clientId = JSON.parse(String(reg.body)).client_id as string;
+    const verifier = b64((await import("node:crypto")).randomBytes(40));
+    const auth = await call("GET", "/oauth/authorize", { query: { response_type: "code", client_id: clientId, redirect_uri: CLAUDE_CB, code_challenge: await sha(verifier), code_challenge_method: "S256", state: "claude-state" } });
+    assert.equal(auth.statusCode, 302);
+    const toAuth0 = new URL(String(auth.headers?.location));
+    assert.equal(toAuth0.origin + toAuth0.pathname, `${issuer}/authorize`);
+    assert.equal(toAuth0.searchParams.get("client_id"), LOGIN_CLIENT);
+    assert.equal(toAuth0.searchParams.get("redirect_uri"), "https://mcp.test/oauth/callback");
+    const cb = await call("GET", "/oauth/callback", { query: { state: String(toAuth0.searchParams.get("state")), code: `${email}::${toAuth0.searchParams.get("nonce")}` } });
+    return { clientId, verifier, cb };
+  }
+
+  test("metadata points Claude at the data room's own sign-in", async () => {
+    const meta = JSON.parse(String((await call("GET", "/.well-known/oauth-authorization-server")).body));
+    assert.equal(meta.registration_endpoint, "https://mcp.test/oauth/register");
+    assert.deepEqual(meta.code_challenge_methods_supported, ["S256"]);
+    const pr = JSON.parse(String((await call("GET", "/.well-known/oauth-protected-resource")).body));
+    assert.deepEqual(pr.authorization_servers, ["https://mcp.test"]);
+  });
+
+  test("only Claude callbacks can register", async () => {
+    const bad = await call("POST", "/oauth/register", { json: { redirect_uris: ["https://evil.example/cb"] } });
+    assert.equal(bad.statusCode, 400);
+    const local = await call("POST", "/oauth/register", { json: { redirect_uris: ["http://localhost:8765/callback"] } });
+    assert.equal(local.statusCode, 201);
+  });
+
+  test("an allow-listed person connects, uses tools, refreshes, and can be revoked", async () => {
+    const { clientId, verifier, cb } = await connect(OWNER);
+    assert.equal(cb.statusCode, 302);
+    const back = new URL(String(cb.headers?.location));
+    assert.equal(back.origin + back.pathname, CLAUDE_CB);
+    assert.equal(back.searchParams.get("state"), "claude-state");
+    const code = String(back.searchParams.get("code"));
+
+    const wrong = await call("POST", "/oauth/token", form({ grant_type: "authorization_code", client_id: clientId, code, redirect_uri: CLAUDE_CB, code_verifier: "x".repeat(43) }));
+    assert.equal(wrong.statusCode, 400); // PKCE failure also burns the code
+    const again = await connect(OWNER);
+    const code2 = String(new URL(String(again.cb.headers?.location)).searchParams.get("code"));
+    const tok = await call("POST", "/oauth/token", form({ grant_type: "authorization_code", client_id: again.clientId, code: code2, redirect_uri: CLAUDE_CB, code_verifier: again.verifier }));
+    assert.equal(tok.statusCode, 200);
+    const tokens = JSON.parse(String(tok.body));
+    assert.match(tokens.access_token, /^drm_at_/);
+    const reuse = await call("POST", "/oauth/token", form({ grant_type: "authorization_code", client_id: again.clientId, code: code2, redirect_uri: CLAUDE_CB, code_verifier: again.verifier }));
+    assert.equal(reuse.statusCode, 400);
+
+    assert.equal((await rpc(tokens.access_token, "tools/list")).status, 200);
+    const summary = await okTool(tokens.access_token, "pipeline_summary", { today: "2026-12-10" });
+    assert.ok(summary.total > 0);
+    assert.equal((await lastAudit("connector_authorized")).actor_email, OWNER);
+
+    const ref = await call("POST", "/oauth/token", form({ grant_type: "refresh_token", client_id: again.clientId, refresh_token: tokens.refresh_token }));
+    assert.equal(ref.statusCode, 200);
+    const fresh = JSON.parse(String(ref.body));
+    const oldRefresh = await call("POST", "/oauth/token", form({ grant_type: "refresh_token", client_id: again.clientId, refresh_token: tokens.refresh_token }));
+    assert.equal(oldRefresh.statusCode, 400, "refresh tokens rotate");
+
+    await call("POST", "/oauth/revoke", form({ token: fresh.access_token }));
+    assert.equal((await rpc(fresh.access_token, "tools/list")).status, 401);
+    void clientId; void verifier;
+  });
+
+  test("someone not on the allow-list gets no code", async () => {
+    const { cb } = await connect("someone@fund.example");
+    assert.equal(cb.statusCode, 403);
+    assert.match(String(cb.body), /can't connect Claude/);
+    assert.equal((await lastAudit("connector_access_denied")).actor_email, "someone@fund.example");
+  });
+
+  test("a made-up connector token is refused", async () => {
+    assert.equal((await rpc("drm_at_notreal", "tools/list")).status, 401);
   });
 });
